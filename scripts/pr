@@ -1,0 +1,411 @@
+#!/bin/bash
+
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+print_step() {
+    echo -e "${BLUE}▸${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}✗${NC} $1"
+    exit 1
+}
+
+print_info() {
+    echo -e "${YELLOW}ℹ${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠${NC} $1"
+}
+
+TEAM_REVIEWER="mus-inn/carjudge"
+
+show_help() {
+    echo ""
+    echo "Usage:"
+    echo "  pr                Get the PR URL for the current branch"
+    echo "  pr ready          Mark PR as ready and add team reviewer"
+    echo "  pr draft          Mark PR as draft"
+    echo "  pr close          Close PR and delete branch"
+    echo "  pr merge          Merge PR and delete branch"
+    echo "  pr check          Show status of PR checks"
+    echo "  pr switch <branch> Switch to the specified branch"
+    echo "  pr --help         Show this help message"
+    echo ""
+    exit 0
+}
+
+check_dependencies() {
+    local missing_deps=()
+
+    command -v gh >/dev/null 2>&1 || missing_deps+=("gh (GitHub CLI)")
+    command -v jq >/dev/null 2>&1 || missing_deps+=("jq")
+
+    if [ ${#missing_deps[@]} -gt 0 ]; then
+        print_error "Missing required dependencies: ${missing_deps[*]}"
+    fi
+}
+
+get_pr_number() {
+    local branch=$(git branch --show-current 2>/dev/null)
+    if [ -z "$branch" ]; then
+        print_error "Not in a git repository"
+    fi
+
+    local pr_number=$(gh pr list --head "$branch" --json number --jq '.[0].number' 2>/dev/null)
+    if [ -z "$pr_number" ]; then
+        print_error "No PR found for branch: $branch"
+    fi
+
+    echo "$pr_number"
+}
+
+show_pr_url() {
+    local pr_number=$(get_pr_number)
+    local pr_data=$(gh pr view "$pr_number" --json isDraft,state,url 2>/dev/null)
+
+    if [ -z "$pr_data" ]; then
+        print_error "Failed to get PR data"
+    fi
+
+    local pr_url=$(echo "$pr_data" | jq -r '.url')
+    local is_draft=$(echo "$pr_data" | jq -r '.isDraft')
+    local state=$(echo "$pr_data" | jq -r '.state')
+
+    local status=""
+    if [ "$state" = "MERGED" ]; then
+        status="merged"
+    elif [ "$is_draft" = "true" ]; then
+        status="draft"
+    elif [ "$state" = "OPEN" ]; then
+        status="ready"
+    elif [ "$state" = "CLOSED" ]; then
+        status="closed"
+    else
+        status="unknown"
+    fi
+
+    echo ""
+    echo "Pull Request ($status): $pr_url"
+    echo ""
+}
+
+mark_pr_ready() {
+    local pr_number=$(get_pr_number)
+    local is_draft=$(gh pr view "$pr_number" --json isDraft --jq '.isDraft' 2>/dev/null)
+    local pr_url=$(gh pr view "$pr_number" --json url --jq '.url' 2>/dev/null)
+
+    echo ""
+
+    if [ "$is_draft" = "true" ]; then
+        print_step "Marking PR as ready for review..."
+        gh pr ready "$pr_number" > /dev/null 2>&1 || print_error "Failed to mark PR as ready"
+        print_success "PR marked as ready"
+
+        echo ""
+
+        print_step "Adding team reviewer: $TEAM_REVIEWER..."
+        gh pr edit "$pr_number" --add-reviewer "$TEAM_REVIEWER" > /dev/null 2>&1 || print_error "Failed to add reviewer"
+        print_success "Reviewer added"
+    else
+        print_info "PR is already ready for review"
+
+        echo ""
+
+        local has_reviewer=$(gh pr view "$pr_number" --json reviewRequests --jq '.reviewRequests[] | select(.slug == "mus-inn/carjudge") | .slug' 2>/dev/null)
+        if [ -z "$has_reviewer" ]; then
+            print_step "Adding team reviewer: $TEAM_REVIEWER..."
+            gh pr edit "$pr_number" --add-reviewer "$TEAM_REVIEWER" > /dev/null 2>&1 || print_error "Failed to add reviewer"
+            print_success "Reviewer added"
+        else
+            print_info "Team reviewer already added"
+        fi
+    fi
+
+    echo ""
+    print_success "PR URL: $pr_url"
+    echo ""
+}
+
+mark_pr_draft() {
+    local pr_number=$(get_pr_number)
+    local is_draft=$(gh pr view "$pr_number" --json isDraft --jq '.isDraft' 2>/dev/null)
+    local pr_url=$(gh pr view "$pr_number" --json url --jq '.url' 2>/dev/null)
+
+    echo ""
+
+    if [ "$is_draft" = "false" ]; then
+        print_step "Marking PR as draft..."
+        gh pr ready "$pr_number" --undo > /dev/null 2>&1 || print_error "Failed to mark PR as draft"
+        print_success "PR marked as draft"
+    else
+        print_info "PR is already in draft mode"
+    fi
+
+    echo ""
+    print_success "PR URL: $pr_url"
+    echo ""
+}
+
+close_pr() {
+    local pr_number=$(get_pr_number)
+    local pr_url=$(gh pr view "$pr_number" --json url --jq '.url' 2>/dev/null)
+
+    echo ""
+
+    print_step "Closing PR and deleting branch..."
+    gh pr close "$pr_number" --delete-branch > /dev/null 2>&1 || print_error "Failed to close PR"
+    print_success "PR closed and branch deleted"
+
+    echo ""
+    print_success "Closed PR: $pr_url"
+    echo ""
+}
+
+merge_pr() {
+    local pr_number=$(get_pr_number)
+    local pr_url=$(gh pr view "$pr_number" --json url --jq '.url' 2>/dev/null)
+
+    echo ""
+
+    print_step "Merging PR and deleting branch..."
+    gh pr merge "$pr_number" --merge --delete-branch > /dev/null 2>&1 || print_error "Failed to merge PR"
+    print_success "PR merged and branch deleted"
+
+    echo ""
+    print_success "Merged PR: $pr_url"
+    echo ""
+}
+
+show_pr_checks() {
+    local pr_number=$(get_pr_number)
+    local checks=$(gh pr checks "$pr_number" --json name,state,bucket,workflow,link 2>/dev/null)
+    local pr_data=$(gh pr view "$pr_number" --json isDraft,reviews,reviewRequests 2>/dev/null)
+    local is_draft=$(echo "$pr_data" | jq -r '.isDraft')
+
+    if [ -z "$checks" ] || [ "$checks" = "[]" ]; then
+        echo ""
+        print_info "No checks found for this PR"
+        echo ""
+        return
+    fi
+
+    echo ""
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${BLUE}CI Checks${NC}"
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+
+    local pass_count=0
+    local fail_count=0
+    local pending_count=0
+
+    echo "$checks" | jq -r '.[] | "\(.bucket)|\(.name)|\(.workflow)|\(.state)|\(.link)"' | while IFS='|' read -r bucket name workflow state link; do
+        local status_icon=""
+        local status_color=""
+
+        case "$bucket" in
+            pass)
+                status_icon="${GREEN}✓${NC}"
+                status_color="${GREEN}"
+                ((pass_count++))
+                ;;
+            fail)
+                status_icon="${RED}✗${NC}"
+                status_color="${RED}"
+                ((fail_count++))
+                ;;
+            pending)
+                status_icon="${YELLOW}●${NC}"
+                status_color="${YELLOW}"
+                ((pending_count++))
+                ;;
+            skipping)
+                status_icon="${YELLOW}○${NC}"
+                status_color="${YELLOW}"
+                ;;
+            cancel)
+                status_icon="${YELLOW}⊗${NC}"
+                status_color="${YELLOW}"
+                ;;
+            *)
+                status_icon="${YELLOW}?${NC}"
+                status_color="${YELLOW}"
+                ;;
+        esac
+
+        printf "  %b %-15s %b%-10s%b %s\n" "$status_icon" "$name" "$status_color" "$state" "$NC" "$workflow"
+    done
+
+    echo ""
+
+    local total=$(echo "$checks" | jq '. | length')
+    local pass=$(echo "$checks" | jq '[.[] | select(.bucket == "pass")] | length')
+    local fail=$(echo "$checks" | jq '[.[] | select(.bucket == "fail")] | length')
+    local pending=$(echo "$checks" | jq '[.[] | select(.bucket == "pending")] | length')
+
+    echo "  Summary: "
+    if [ "$fail" -gt 0 ]; then
+        echo -e "  ${RED}$fail failed${NC}, ${GREEN}$pass passed${NC}, ${YELLOW}$pending pending${NC} (total: $total)"
+    elif [ "$pending" -gt 0 ]; then
+        echo -e "  ${GREEN}$pass passed${NC}, ${YELLOW}$pending pending${NC} (total: $total)"
+    else
+        echo -e "  ${GREEN}All checks passed${NC} ($pass/$total)"
+    fi
+
+    echo ""
+    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+
+    if [ "$is_draft" = "false" ]; then
+        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${BLUE}Reviews${NC}"
+        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+
+        local has_reviews=false
+        local approved_count=0
+        local changes_requested_count=0
+        local pending_count=0
+
+        local reviews=$(echo "$pr_data" | jq -r '.reviews')
+        local review_requests=$(echo "$pr_data" | jq -r '.reviewRequests')
+
+        if [ "$reviews" != "null" ] && [ "$reviews" != "[]" ]; then
+            has_reviews=true
+            echo "$pr_data" | jq -r '.reviews[] | select(.state == "APPROVED" or .state == "CHANGES_REQUESTED") | "\(.state)|\(.author.login)"' | while IFS='|' read -r state author; do
+                if [ "$state" = "APPROVED" ]; then
+                    echo -e "  ${GREEN}✓${NC} $author - Approved"
+                    ((approved_count++))
+                elif [ "$state" = "CHANGES_REQUESTED" ]; then
+                    echo -e "  ${RED}✗${NC} $author - Changes requested"
+                    ((changes_requested_count++))
+                fi
+            done
+        fi
+
+        if [ "$review_requests" != "null" ] && [ "$review_requests" != "[]" ]; then
+            has_reviews=true
+            echo "$pr_data" | jq -r '.reviewRequests[] | if .__typename == "Team" then .slug else .login end' | while IFS= read -r reviewer; do
+                echo -e "  ${YELLOW}●${NC} $reviewer - Pending review"
+                ((pending_count++))
+            done
+        fi
+
+        if [ "$has_reviews" = "false" ]; then
+            echo -e "  ${YELLOW}ℹ${NC} No reviewers assigned"
+        fi
+
+        echo ""
+        echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo ""
+    fi
+}
+
+switch_branch() {
+    local branch_name="$1"
+
+    if [ -z "$branch_name" ]; then
+        print_error "Branch name is required. Usage: pr switch <branch-name>"
+    fi
+
+    echo ""
+    print_step "Switching to branch: $branch_name"
+
+    # Check if branch exists locally
+    if git show-ref --verify --quiet "refs/heads/$branch_name"; then
+        print_step "Branch exists locally, switching..."
+        git checkout "$branch_name" > /dev/null 2>&1 || print_error "Failed to switch to branch"
+        print_success "Switched to branch: $branch_name"
+
+        # Try to pull if tracking a remote branch
+        if git rev-parse --abbrev-ref "$branch_name@{upstream}" > /dev/null 2>&1; then
+            echo ""
+            print_step "Pulling latest changes..."
+            git pull > /dev/null 2>&1 || print_warning "Failed to pull latest changes"
+            print_success "Branch updated with latest changes"
+        fi
+    # Check if branch exists on remote
+    elif git ls-remote --heads origin "$branch_name" | grep -q "$branch_name"; then
+        print_step "Branch exists on remote, fetching and checking out..."
+        git fetch origin > /dev/null 2>&1 || print_error "Failed to fetch from remote"
+        git checkout -b "$branch_name" "origin/$branch_name" > /dev/null 2>&1 || print_error "Failed to checkout remote branch"
+        print_success "Switched to branch: $branch_name (from remote)"
+    else
+        print_step "Branch does not exist, creating..."
+        git checkout -b "$branch_name" > /dev/null 2>&1 || print_error "Failed to create branch"
+        print_success "Created and switched to branch: $branch_name"
+    fi
+
+    echo ""
+
+    # Check if a PR exists for this branch
+    local pr_data=$(gh pr list --head "$branch_name" --json number,isDraft,state,url --jq '.[0]' 2>/dev/null)
+
+    if [ -n "$pr_data" ] && [ "$pr_data" != "null" ]; then
+        local pr_url=$(echo "$pr_data" | jq -r '.url')
+        local is_draft=$(echo "$pr_data" | jq -r '.isDraft')
+        local state=$(echo "$pr_data" | jq -r '.state')
+
+        local status=""
+        if [ "$state" = "MERGED" ]; then
+            status="merged"
+        elif [ "$is_draft" = "true" ]; then
+            status="draft"
+        elif [ "$state" = "OPEN" ]; then
+            status="ready"
+        elif [ "$state" = "CLOSED" ]; then
+            status="closed"
+        else
+            status="unknown"
+        fi
+
+        echo "Pull Request ($status): $pr_url"
+        echo ""
+    else
+        print_info "No PR found for this branch"
+        echo ""
+    fi
+}
+
+check_dependencies
+
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    show_help
+fi
+
+case "$1" in
+    "")
+        show_pr_url
+        ;;
+    ready)
+        mark_pr_ready
+        ;;
+    draft)
+        mark_pr_draft
+        ;;
+    close)
+        close_pr
+        ;;
+    merge)
+        merge_pr
+        ;;
+    check)
+        show_pr_checks
+        ;;
+    switch)
+        switch_branch "$2"
+        ;;
+    *)
+        print_error "Unknown command: $1. Use 'pr --help' for usage information."
+        ;;
+esac
