@@ -5,6 +5,8 @@
 ```
 brew install ghostty claude-code codex gemini-cli opencode gh getsentry/tools/sentry schpet/tap/linear-cli aarondfrancis/homebrew-tap/counselors
 for p in code-review feature-dev frontend-design laravel-simplifier php-lsp typescript-lsp ralph-loop; do claude plugin install $p; done
+npx skills add https://github.com/vercel-labs/agent-browser --skill agent-browser
+npx skills add https://github.com/vercel-labs/agent-browser --skill dogfood
 ```
 
 ## Stack d'outils
