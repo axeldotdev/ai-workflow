@@ -1,553 +1,166 @@
 ---
 name: linear-cli
-description: Guide for using the Linear CLI to interact with Linear from the command line. Use when the user asks about listing, creating, starting, or managing Linear issues, teams, projects, milestones, initiatives, labels, or documents via CLI.
+description: Manage Linear issues from the command line using the linear cli. This skill allows automating linear management.
+allowed-tools: Bash(linear:*), Bash(curl:*)
 ---
 
-# Linear CLI Usage Guide
+# Linear CLI
 
-Help users interact with Linear from the command line using the `linear` CLI (v1.10.0).
+A CLI to manage Linear issues from the command line, with git and jj integration.
 
-## Related Skills
-
-- **linear** - Use MCP tools for programmatic Linear access (fetch issue details, update status)
-- **linear-issue** - Write Linear issues optimized for Claude Code
-- **linear-project** - Write PRDs for Linear projects
-- **github** - GitHub CLI for PRs, issues, and repo operations
-- **git-workflow** - Use `./ship` and `./pr` for git workflow automation
-
-## When to Use What
-
-### Use `linear api` for:
-
-- **Preferred approach for querying/retrieving data** — request exactly the fields you need
-- Fetching issues, projects, milestones, or any Linear data with custom field selection
-- Complex filtering and querying that CLI subcommands don't support
-- Getting raw JSON for further processing or scripting
-- Accessing any part of the Linear GraphQL schema
-
-### Use `linear` CLI subcommands for:
-
-- Starting work on an issue (creates branch + sets status)
-- Creating issues with full details (title, description, labels, priority)
-- Creating GitHub PRs linked to Linear issues
-- Managing documents, labels, initiatives
-- Quick lookups without leaving the terminal
-
-### Use Linear MCP tools for:
-
-- Fetching issue details programmatically within a workflow
-- Updating issue status as part of an automated process
-- Searching/filtering issues with complex criteria
-- Adding comments programmatically
-
-## CarJudge Context
-
-- **Organization**: dotworld-sarl
-- **Team prefix**: `DOTO`
-- **Configuration**: Run `linear config` to generate `.linear.toml` with your team ID
+Generated from linear CLI v1.10.0
 
 ## Prerequisites
 
-### Installation
+The `linear` command must be available on PATH. To check:
 
 ```bash
-# Install via Homebrew
-brew install schpet/tap/linear-cli
-
-# Or install via cargo
-cargo install linear-cli
+linear --version
 ```
 
-### Authentication
+If not installed, follow the instructions at:\
+https://github.com/schpet/linear-cli?tab=readme-ov-file#install
+
+## Best Practices for Markdown Content
+
+When working with issue descriptions or comment bodies that contain markdown, **always prefer using file-based flags** instead of passing content as command-line arguments:
+
+- Use `--description-file` for `issue create` and `issue update` commands
+- Use `--body-file` for `comment add` and `comment update` commands
+
+**Why use file-based flags:**
+
+- Ensures proper formatting in the Linear web UI
+- Avoids shell escaping issues with newlines and special characters
+- Prevents literal `\n` sequences from appearing in markdown
+- Makes it easier to work with multi-line content
+
+**Example workflow:**
 
 ```bash
-# Login (opens browser for OAuth)
-linear auth login
+# Write markdown to a temporary file
+cat > /tmp/description.md <<'EOF'
+## Summary
 
-# Check who you're logged in as
-linear auth whoami
+- First item
+- Second item
 
-# List configured workspaces
-linear auth list
+## Details
 
-# Set default workspace
-linear auth default <workspace-slug>
+This is a detailed description with proper formatting.
+EOF
 
-# Logout
-linear auth logout
+# Create issue using the file
+linear issue create --title "My Issue" --description-file /tmp/description.md
+
+# Or for comments
+linear issue comment add ENG-123 --body-file /tmp/comment.md
 ```
 
-## Configuration
-
-Run `linear config` to interactively generate a `.linear.toml` file in your project root. This sets the default team for commands.
-
-Environment variables:
-- `LINEAR_DEBUG=1` - Show full error details including stack traces
+**Only use inline flags** (`--description`, `--body`) for simple, single-line content.
 
 ## Available Commands
 
-### Issue
-
-#### `linear issue list`
-
-List your issues (defaults to unstarted issues assigned to you).
-
-**Flags:**
-- `-s, --state <state>` - Filter by state: `triage`, `backlog`, `unstarted`, `started`, `completed`, `canceled` (repeatable)
-- `--all-states` - Show issues from all states
-- `--assignee <username>` - Filter by assignee
-- `-A, --all-assignees` - Show issues for all assignees
-- `-U, --unassigned` - Show only unassigned issues
-- `--team <team>` - Team to list issues for
-- `--project <project>` - Filter by project name
-- `--sort <sort>` - Sort by: `manual`, `priority`
-- `--limit <limit>` - Max issues to fetch (default: 50, 0 for unlimited)
-- `-w, --web` - Open in browser
-- `--no-pager` - Disable paging
-
-**Examples:**
-
-```bash
-# List your unstarted issues
-linear issue list
-
-# List started issues
-linear issue list -s started
-
-# List all states for all assignees
-linear issue list --all-states -A
-
-# List issues for a specific project
-linear issue list --project "My Project"
+```
+linear auth               # Manage Linear authentication
+linear issue              # Manage Linear issues
+linear team               # Manage Linear teams
+linear project            # Manage Linear projects
+linear project-update     # Manage project status updates
+linear milestone          # Manage Linear project milestones
+linear initiative         # Manage Linear initiatives
+linear initiative-update  # Manage initiative status updates (timeline posts)
+linear label              # Manage Linear issue labels
+linear document           # Manage Linear documents
+linear config             # Interactively generate .linear.toml configuration
+linear schema             # Print the GraphQL schema to stdout
+linear api                # Make a raw GraphQL API request
 ```
 
-#### `linear issue view [issueId]`
+## Reference Documentation
 
-View issue details. Defaults to current branch's issue.
+- [auth](references/auth.md) - Manage Linear authentication
+- [issue](references/issue.md) - Manage Linear issues
+- [team](references/team.md) - Manage Linear teams
+- [project](references/project.md) - Manage Linear projects
+- [project-update](references/project-update.md) - Manage project status updates
+- [milestone](references/milestone.md) - Manage Linear project milestones
+- [initiative](references/initiative.md) - Manage Linear initiatives
+- [initiative-update](references/initiative-update.md) - Manage initiative status updates (timeline posts)
+- [label](references/label.md) - Manage Linear issue labels
+- [document](references/document.md) - Manage Linear documents
+- [config](references/config.md) - Interactively generate .linear.toml configuration
+- [schema](references/schema.md) - Print the GraphQL schema to stdout
+- [api](references/api.md) - Make a raw GraphQL API request
 
-**Flags:**
-- `-w, --web` - Open in browser
-- `-a, --app` - Open in Linear.app
-- `-j, --json` - Output as JSON
-- `--no-comments` - Exclude comments
-- `--no-download` - Keep remote URLs instead of downloading files
-- `--no-pager` - Disable paging
+For curated examples of organization features (initiatives, labels, projects, bulk operations), see [organization-features](references/organization-features.md).
 
-**Examples:**
+## Discovering Options
+
+To see available subcommands and flags, run `--help` on any command:
 
 ```bash
-# View current branch's issue
-linear issue view
-
-# View by issue ID
-linear issue view DOTO-123
-
-# Open in browser
-linear issue view DOTO-123 -w
-
-# JSON output
-linear issue view DOTO-123 --json
+linear --help
+linear issue --help
+linear issue list --help
+linear issue create --help
 ```
 
-#### `linear issue create`
+Each command has detailed help output describing all available flags and options.
 
-Create a new issue.
+## Using the Linear GraphQL API Directly
 
-**Flags:**
-- `-t, --title <title>` - Title
-- `-d, --description <description>` - Description
-- `--description-file <path>` - Read description from file (preferred for markdown)
-- `-a, --assignee <assignee>` - Assign to `self` or username
-- `-l, --label <label>` - Label (repeatable)
-- `-s, --state <state>` - Workflow state
-- `-p, --parent <parent>` - Parent issue (e.g., `DOTO-100`)
-- `--priority <1-4>` - Priority (1=urgent, 4=low)
-- `--estimate <points>` - Points estimate
-- `--due-date <date>` - Due date
-- `--team <team>` - Team (if not default)
-- `--project <project>` - Project name
-- `--start` - Start the issue after creation
-- `--no-interactive` - Disable interactive prompts
+**Prefer the CLI for all supported operations.** The `api` command should only be used as a fallback for queries not covered by the CLI.
 
-**Examples:**
+### Check the schema for available types and fields
+
+Write the schema to a tempfile, then search it:
 
 ```bash
-# Interactive creation
-linear issue create
-
-# Non-interactive with all details
-linear issue create \
-  -t "Add rate limiting to API" \
-  -d "Implement rate limiting middleware" \
-  -a self \
-  -l "Feature" \
-  --priority 2 \
-  --no-interactive
-
-# With description from file
-linear issue create \
-  -t "Refactor payment flow" \
-  --description-file ./issue-description.md \
-  --start
+linear schema -o "${TMPDIR:-/tmp}/linear-schema.graphql"
+grep -i "cycle" "${TMPDIR:-/tmp}/linear-schema.graphql"
+grep -A 30 "^type Issue " "${TMPDIR:-/tmp}/linear-schema.graphql"
 ```
 
-#### `linear issue start [issueId]`
+### Make a GraphQL request
 
-Start working on an issue: assigns to you, sets status to "In Progress", creates a git branch.
-
-**Flags:**
-- `-f, --from-ref <ref>` - Git ref to create branch from
-- `-b, --branch <name>` - Custom branch name
-- `-A, --all-assignees` - Show issues for all assignees
-- `-U, --unassigned` - Show only unassigned issues
-
-**Examples:**
+**Important:** GraphQL queries containing non-null type markers (e.g. `String` followed by an exclamation mark) must be passed via heredoc stdin to avoid escaping issues. Simple queries without those markers can be passed inline.
 
 ```bash
-# Interactive: pick from your unstarted issues
-linear issue start
-
-# Start a specific issue
-linear issue start DOTO-123
-
-# Start from a specific branch
-linear issue start DOTO-123 --from-ref main
-
-# Use a custom branch name
-linear issue start DOTO-123 --branch feat/my-feature
-```
-
-#### `linear issue update [issueId]`
-
-Update an existing issue.
-
-**Flags:**
-- `-t, --title <title>` - Title
-- `-d, --description <description>` - Description
-- `--description-file <path>` - Read description from file
-- `-a, --assignee <assignee>` - Assignee
-- `-l, --label <label>` - Label (repeatable)
-- `-s, --state <state>` - Workflow state
-- `-p, --parent <parent>` - Parent issue
-- `--priority <1-4>` - Priority
-- `--estimate <points>` - Points estimate
-- `--due-date <date>` - Due date
-- `--team <team>` - Team
-- `--project <project>` - Project
-
-**Examples:**
-
-```bash
-# Update current branch's issue state
-linear issue update -s "Done"
-
-# Update a specific issue
-linear issue update DOTO-123 -s "In Review" -a someone
-```
-
-#### `linear issue delete [issueId]`
-
-Delete an issue.
-
-**Flags:**
-- `-y, --confirm` - Skip confirmation
-- `--bulk <ids...>` - Delete multiple issues (e.g., `DOTO-123 DOTO-124`)
-- `--bulk-file <file>` - Read issue IDs from file
-- `--bulk-stdin` - Read issue IDs from stdin
-
-#### `linear issue pr [issueId]`
-
-Create a GitHub pull request linked to the Linear issue.
-
-**Flags:**
-- `--base <branch>` - Target branch for merge
-- `--head <branch>` - Source branch
-- `--draft` - Create as draft PR
-- `-t, --title <title>` - PR title (issue ID auto-prefixed)
-- `--web` - Open PR in browser after creation
-
-**Examples:**
-
-```bash
-# Create PR for current branch's issue
-linear issue pr
-
-# Create draft PR with custom base
-linear issue pr DOTO-123 --draft --base main
-
-# Create and open in browser
-linear issue pr --web
-```
-
-#### `linear issue comment`
-
-Manage issue comments.
-
-```bash
-# Add a comment
-linear issue comment add DOTO-123
-
-# List comments
-linear issue comment list DOTO-123
-
-# Update a comment
-linear issue comment update <commentId>
-```
-
-#### `linear issue id`
-
-Print the issue ID based on the current git branch.
-
-```bash
-linear issue id
-```
-
-#### `linear issue url [issueId]`
-
-Print the issue URL.
-
-```bash
-linear issue url DOTO-123
-```
-
-#### `linear issue title [issueId]`
-
-Print the issue title.
-
-```bash
-linear issue title DOTO-123
-```
-
-#### `linear issue attach <issueId> <filepath>`
-
-Attach a file to an issue.
-
-**Flags:**
-- `-t, --title <title>` - Custom attachment title
-- `-c, --comment <body>` - Add a comment linked to the attachment
-
-#### `linear issue relation`
-
-Manage issue relations (dependencies).
-
-```bash
-# Add a relation
-linear issue relation add DOTO-123 blocks DOTO-456
-
-# List relations
-linear issue relation list DOTO-123
-
-# Delete a relation
-linear issue relation delete DOTO-123 blocks DOTO-456
-```
-
-### Team
-
-```bash
-# List teams
-linear team list
-
-# Get configured team ID
-linear team id
-
-# List team members
-linear team members
-linear team members DOTO
-
-# Create a team
-linear team create
-
-# Delete a team
-linear team delete DOTO
-
-# Set up GitHub autolinks for Linear issues
-linear team autolinks
-```
-
-### Project
-
-```bash
-# List projects
-linear project list
-
-# View project details
-linear project view <projectId>
-
-# Create a new project
-linear project create
-```
-
-### Project Updates
-
-```bash
-# List status updates for a project
-linear project-update list <projectId>
-
-# Create a status update
-linear project-update create <projectId>
-```
-
-### Milestone
-
-```bash
-# List milestones for a project
-linear milestone list
-
-# View milestone details
-linear milestone view <milestoneId>
-
-# Create a milestone
-linear milestone create
-
-# Update a milestone
-linear milestone update <id>
-
-# Delete a milestone
-linear milestone delete <id>
-```
-
-### Initiative
-
-```bash
-# List initiatives
-linear initiative list
-
-# View initiative details
-linear initiative view <initiativeId>
-
-# Create an initiative
-linear initiative create
-
-# Update an initiative
-linear initiative update <initiativeId>
-
-# Archive / unarchive
-linear initiative archive <initiativeId>
-linear initiative unarchive <initiativeId>
-
-# Link/unlink projects
-linear initiative add-project <initiative> <project>
-linear initiative remove-project <initiative> <project>
-
-# Delete an initiative
-linear initiative delete <initiativeId>
-```
-
-### Label
-
-```bash
-# List issue labels
-linear label list
-
-# Create a label
-linear label create
-
-# Delete a label
-linear label delete <nameOrId>
-```
-
-### Document
-
-```bash
-# List documents
-linear document list
-
-# View a document
-linear document view <id>
-
-# Create a document
-linear document create
-
-# Update a document
-linear document update <documentId>
-
-# Delete a document (moves to trash)
-linear document delete <documentId>
-```
-
-### Config & Auth
-
-```bash
-# Generate .linear.toml configuration
-linear config
-
-# Auth commands (see Prerequisites above)
-linear auth login
-linear auth logout
-linear auth list
-linear auth default <workspace>
-linear auth whoami
-linear auth token
-
-# Generate shell completions
-linear completions
-
-# Print GraphQL schema
-linear schema
-```
-
-### API (Raw GraphQL)
-
-Make raw GraphQL requests to the Linear API.
-
-**Flags:**
-- `--variable <key=value>` - Variable (repeatable)
-- `--variables-json <json>` - JSON object of variables
-- `--paginate` - Auto-paginate cursor-based results
-- `--silent` - Suppress response output
-
-**Examples:**
-
-```bash
-# Run a GraphQL query
+# Simple query (no type markers, so inline is fine)
 linear api '{ viewer { id name email } }'
 
-# Query with variables
-linear api '{ issue(id: $id) { title state { name } } }' --variable id=DOTO-123
+# Query with variables — use heredoc to avoid escaping issues
+linear api --variable teamId=abc123 <<'GRAPHQL'
+query($teamId: String!) { team(id: $teamId) { name } }
+GRAPHQL
 
-# Paginate through results
-linear api '{ issues { nodes { id title } } }' --paginate
+# Search issues by text
+linear api --variable term=onboarding <<'GRAPHQL'
+query($term: String!) { searchIssues(term: $term, first: 20) { nodes { identifier title state { name } } } }
+GRAPHQL
+
+# Numeric and boolean variables
+linear api --variable first=5 <<'GRAPHQL'
+query($first: Int!) { issues(first: $first) { nodes { title } } }
+GRAPHQL
+
+# Complex variables via JSON
+linear api --variables-json '{"filter": {"state": {"name": {"eq": "In Progress"}}}}' <<'GRAPHQL'
+query($filter: IssueFilter!) { issues(filter: $filter) { nodes { title } } }
+GRAPHQL
+
+# Pipe to jq for filtering
+linear api '{ issues(first: 5) { nodes { identifier title } } }' | jq '.data.issues.nodes[].title'
 ```
 
-## Workflow Examples
+### Advanced: Using curl directly
 
-### Starting Work on a Linear Issue
+For cases where you need full HTTP control, use `linear auth token`:
 
 ```bash
-# 1. List your unstarted issues
-linear issue list
-
-# 2. Start the issue (assigns, sets "In Progress", creates branch)
-linear issue start DOTO-123
-
-# 3. Do your work...
-
-# 4. Create a PR linked to the issue
-linear issue pr
-
-# 5. Or use ./ship for the full workflow
-./ship feat DOTO-123 "Add rate limiting"
+curl -s -X POST https://api.linear.app/graphql \
+  -H "Content-Type: application/json" \
+  -H "Authorization: $(linear auth token)" \
+  -d '{"query": "{ viewer { id } }"}'
 ```
-
-### Quick Issue Lookup from Current Branch
-
-```bash
-# View the issue for your current branch
-linear issue view
-
-# Get just the issue ID
-linear issue id
-
-# Get just the title
-linear issue title
-
-# Open in browser
-linear issue view -w
-```
-
-## Global Flags
-
-All commands support:
-- `-h, --help` - Show help
-- `-V, --version` - Show version
-- `-w, --workspace <slug>` - Target a specific workspace
