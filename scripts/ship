@@ -1,0 +1,482 @@
+#!/bin/bash
+
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+print_step() {
+    echo -e "${BLUE}▸${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}✗${NC} $1"
+    exit 1
+}
+
+print_info() {
+    echo -e "${YELLOW}ℹ${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠${NC} $1"
+}
+
+VALID_TYPES=("feat" "fix" "perf" "refactor" "docs" "style" "test" "build" "ci" "chore" "revert" "breaking")
+TEAM_REVIEWER="mus-inn/carjudge"
+
+show_help() {
+    echo ""
+    echo "Usage:"
+    echo "  ship <type> <id> <message>     Create new branch and ship"
+    echo "  ship <message>                 Ship on existing branch"
+    echo "  ship --amend <message>         Amend last commit (with optional new message)"
+    echo "  ship --help                    Show this help message"
+    echo ""
+    echo "Flags:"
+    echo "  -r, --ready                    Mark PR as ready for review (not draft)"
+    echo "  --no-pr                        Skip PR creation (just push)"
+    echo "  --amend                        Amend the last commit instead of creating new one"
+    echo ""
+    echo "Valid Types:"
+    echo "  ${VALID_TYPES[*]}"
+    echo ""
+    echo "Notes:"
+    echo "  • New branches are always created from your current branch location"
+    echo "  • Currency checks compare against the current branch's remote (not master)"
+    echo ""
+    echo "Examples:"
+    echo "  ship feat DOTO-123 \"add user authentication\""
+    echo "  ship feat DOTO-456 \"new sub-feature\"  (creates from current feature branch)"
+    echo "  ship \"fix typo in validation\""
+    echo "  ship -r \"ready for review\""
+    echo "  ship --no-pr \"quick fix without PR\""
+    echo "  ship --amend \"updated commit message\""
+    echo "  ship --amend  (keeps existing message)"
+    echo "  ship --amend -r \"fix tests and mark ready\""
+    echo ""
+    exit 0
+}
+
+validate_type() {
+    local type=$1
+    for valid_type in "${VALID_TYPES[@]}"; do
+        if [ "$type" = "$valid_type" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+check_for_changes() {
+    # When amending, we might not have new changes (just updating message)
+    if [ "$amend_flag" = true ]; then
+        return 0
+    fi
+
+    if [[ -z $(git status --porcelain) ]]; then
+        print_error "No changes to commit. Working directory is clean."
+    fi
+}
+
+has_php_changes() {
+    # Check both staged and unstaged PHP files
+    git diff --name-only | grep -q '\.php$' || git diff --cached --name-only | grep -q '\.php$'
+    return $?
+}
+
+has_js_changes() {
+    # Check staged, unstaged, and untracked JS/TS files
+    git diff --name-only | grep -qE '\.(js|ts|jsx|tsx)$' \
+        || git diff --cached --name-only | grep -qE '\.(js|ts|jsx|tsx)$' \
+        || git ls-files --others --exclude-standard | grep -qE '\.(js|ts|jsx|tsx)$'
+    return $?
+}
+
+check_branch_currency() {
+    echo ""
+    print_step "Checking branch currency..."
+
+    git fetch origin --quiet 2>/dev/null || print_error "Failed to fetch from remote"
+
+    main_branch="master"
+    if git show-ref --verify --quiet "refs/heads/main"; then
+        main_branch="main"
+    fi
+
+    local_main=$(git rev-parse "$main_branch" 2>/dev/null)
+    remote_main=$(git rev-parse "origin/$main_branch" 2>/dev/null)
+
+    if [ "$local_main" != "$remote_main" ]; then
+        current=$(git branch --show-current)
+        git checkout "$main_branch" --quiet 2>/dev/null
+        git pull origin "$main_branch" --quiet 2>/dev/null || print_error "Failed to update $main_branch"
+        git checkout "$current" --quiet 2>/dev/null
+        print_info "Updated $main_branch branch"
+    fi
+
+    current_branch=$(git branch --show-current)
+
+    if [ "$current_branch" != "master" ] && [ "$current_branch" != "main" ]; then
+        if git show-ref --verify --quiet "refs/remotes/origin/$current_branch"; then
+            behind=$(git rev-list --count HEAD..origin/$current_branch 2>/dev/null || echo "0")
+            ahead=$(git rev-list --count origin/$current_branch..HEAD 2>/dev/null || echo "0")
+
+            if [ "$behind" -gt 0 ]; then
+                echo ""
+                if [ "$ahead" -gt 0 ]; then
+                    print_warning "Your branch has diverged: $ahead commit(s) ahead, $behind commit(s) behind origin/$current_branch."
+                else
+                    print_warning "Your branch is $behind commit(s) behind origin/$current_branch."
+                fi
+
+                if [ -t 0 ]; then
+                    read -p "Pull from origin/$current_branch now? (y/n): " -n 1 -r
+                    echo ""
+
+                    if [[ $REPLY =~ ^[Yy]$ ]]; then
+                        print_step "Pulling from origin/$current_branch..."
+                        if git pull origin "$current_branch" --quiet 2>/dev/null; then
+                            print_success "Pull completed successfully"
+                        else
+                            print_error "Pull failed. Please resolve conflicts manually and try again."
+                        fi
+                    else
+                        print_warning "Continuing without pulling. Your branch may be out of sync with remote."
+                    fi
+                else
+                    print_warning "Non-interactive mode. Skipping pull prompt."
+                fi
+            fi
+        else
+            print_info "Branch '$current_branch' doesn't exist on remote yet"
+        fi
+    fi
+
+    echo ""
+}
+
+run_quality_checks() {
+    echo ""
+    print_step "Running quality checks..."
+    echo ""
+
+    if has_js_changes; then
+        check_js_dependencies
+
+        print_step "Running Prettier..."
+        prettier_output=$(npx prettier --write resources/ 2>&1)
+        if [ $? -eq 0 ]; then
+            print_success "Prettier passed"
+        else
+            echo "$prettier_output"
+            print_error "Prettier failed. Please fix the issues above."
+        fi
+
+        echo ""
+
+        print_step "Running ESLint..."
+        eslint_output=$(npx eslint . --fix 2>&1)
+        if [ $? -eq 0 ]; then
+            print_success "ESLint passed"
+        else
+            echo "$eslint_output"
+            print_error "ESLint failed. Please fix the issues above."
+        fi
+
+        echo ""
+    else
+        print_info "No JS/TS files modified, skipping Prettier and ESLint"
+        echo ""
+    fi
+
+    if has_php_changes; then
+        print_step "Running Rector..."
+        rector_output=$(vendor/bin/rector process 2>&1)
+        if [ $? -eq 0 ]; then
+            if echo "$rector_output" | grep -q "Rector is done"; then
+                files_processed=$(echo "$rector_output" | grep -oE '[0-9]+ files?' | head -1 | grep -oE '[0-9]+' || echo "0")
+                files_processed=$(echo "$files_processed" | xargs)
+                print_success "Rector passed (${files_processed} files processed)"
+            else
+                print_success "Rector passed"
+            fi
+        else
+            echo "$rector_output"
+            print_error "Rector failed. Please fix the issues above."
+        fi
+
+        echo ""
+
+        print_step "Running Pint..."
+        pint_output=$(vendor/bin/pint --dirty 2>&1)
+        if [ $? -eq 0 ]; then
+            files_fixed=$(echo "$pint_output" | grep -c "✓" 2>/dev/null)
+            files_fixed=${files_fixed:-0}
+            print_success "Pint passed (${files_fixed} files checked/fixed)"
+        else
+            echo "$pint_output"
+            print_error "Pint failed. Please fix the issues above."
+        fi
+
+        echo ""
+
+        print_step "Running Pest Architecture tests..."
+        pest_output=$(vendor/bin/pest --arch 2>&1)
+        if [ $? -eq 0 ]; then
+            print_success "Pest Architecture tests passed"
+        else
+            echo "$pest_output"
+            print_error "Pest Architecture tests failed. Please fix the issues above."
+        fi
+
+        echo ""
+
+        print_step "Running PHPStan..."
+        phpstan_output=$(vendor/bin/phpstan analyse 2>&1)
+        if [ $? -eq 0 ]; then
+            print_success "PHPStan passed"
+        else
+            echo "$phpstan_output"
+            print_error "PHPStan failed. Please fix the issues above."
+        fi
+
+        echo ""
+    else
+        print_info "No PHP files modified, skipping Rector, Pint, PHPStan, and Pest Architecture tests"
+        echo ""
+    fi
+}
+
+check_dependencies() {
+    local missing_deps=()
+
+    command -v git >/dev/null 2>&1 || missing_deps+=("git")
+    command -v gh >/dev/null 2>&1 || missing_deps+=("gh (GitHub CLI)")
+    command -v jq >/dev/null 2>&1 || missing_deps+=("jq")
+
+    if [ ${#missing_deps[@]} -gt 0 ]; then
+        print_error "Missing required dependencies: ${missing_deps[*]}"
+    fi
+}
+
+check_js_dependencies() {
+    local missing_deps=()
+
+    command -v node >/dev/null 2>&1 || missing_deps+=("node")
+    command -v npx >/dev/null 2>&1 || missing_deps+=("npx")
+
+    if [ ${#missing_deps[@]} -gt 0 ]; then
+        print_error "Missing JS dependencies: ${missing_deps[*]}"
+    fi
+}
+
+check_dependencies
+
+ready_flag=false
+no_pr=false
+amend_flag=false
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --help)
+            show_help
+            ;;
+        -r|--ready)
+            ready_flag=true
+            shift
+            ;;
+        --no-pr)
+            no_pr=true
+            shift
+            ;;
+        --amend)
+            amend_flag=true
+            shift
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+current_branch=$(git branch --show-current)
+
+if [ "$amend_flag" = true ]; then
+    if [ "$current_branch" = "master" ] || [ "$current_branch" = "main" ]; then
+        print_error "Cannot amend on master branch"
+    fi
+
+    if [[ $current_branch =~ ^([^/]+)/(.+)$ ]]; then
+        type="${BASH_REMATCH[1]}"
+        id="${BASH_REMATCH[2]}"
+        branch_name="$current_branch"
+
+        if [ $# -eq 1 ]; then
+            message=$1
+            commit_message="${type}(${id}): ${message}"
+            amend_with_message=true
+        elif [ $# -eq 0 ]; then
+            amend_with_message=false
+        else
+            print_error "Usage with --amend: ship --amend [message]"
+        fi
+    else
+        print_error "Cannot extract type/id from branch name: $current_branch"
+    fi
+elif [ $# -eq 3 ]; then
+    type=$1
+    id=$2
+    message=$3
+    branch_name="${type}/${id}"
+    commit_message="${type}(${id}): ${message}"
+elif [ $# -eq 1 ]; then
+    message=$1
+
+    if [ "$current_branch" = "master" ] || [ "$current_branch" = "main" ]; then
+        print_error "You're on master. Please provide type and id: ship <type> <id> <message>"
+    fi
+
+    if [[ $current_branch =~ ^([^/]+)/(.+)$ ]]; then
+        type="${BASH_REMATCH[1]}"
+        id="${BASH_REMATCH[2]}"
+        branch_name="$current_branch"
+        commit_message="${type}(${id}): ${message}"
+    else
+        print_error "Cannot extract type/id from branch name: $current_branch"
+    fi
+else
+    print_error "Usage: ship <type> <id> <message> OR ship <message>"
+fi
+
+if ! validate_type "$type"; then
+    print_error "Invalid type: '$type'. Valid types are: ${VALID_TYPES[*]}"
+fi
+
+echo ""
+print_step "Shipping your changes..."
+
+# check_branch_currency
+check_for_changes
+run_quality_checks
+
+if [ "$amend_flag" = false ]; then
+    if git show-ref --verify --quiet "refs/heads/${branch_name}"; then
+        if [ "$current_branch" != "$branch_name" ]; then
+            print_step "Switching to existing branch: ${branch_name}"
+            git checkout "$branch_name" --quiet || print_error "Failed to checkout branch"
+        else
+            print_info "Already on branch: ${branch_name}"
+        fi
+    else
+        print_step "Creating new branch: ${branch_name}"
+        git checkout -b "$branch_name" --quiet || print_error "Failed to create branch"
+    fi
+
+    echo ""
+fi
+
+print_step "Adding changes..."
+git add . || print_error "Failed to add changes"
+files_staged=$(git diff --cached --name-only | wc -l | xargs)
+print_success "Changes staged (${files_staged} files)"
+
+if [ "$files_staged" -ge 15 ]; then
+    echo ""
+    print_warning "Large commit detected (${files_staged} files). Consider splitting into smaller commits."
+    echo ""
+    echo "Files to be committed:"
+    git diff --cached --name-only | head -20
+    if [ "$files_staged" -gt 20 ]; then
+        echo "... and $((files_staged - 20)) more files"
+    fi
+    echo ""
+fi
+
+echo ""
+
+if [ "$amend_flag" = true ]; then
+    if [ "$amend_with_message" = true ]; then
+        print_step "Amending commit: ${commit_message}"
+        git commit --amend -m "$commit_message" --quiet || print_error "Failed to amend commit"
+    else
+        print_step "Amending commit (keeping message)"
+        git commit --amend --no-edit --quiet || print_error "Failed to amend commit"
+    fi
+    print_success "Commit amended successfully"
+else
+    print_step "Committing: ${commit_message}"
+    git commit -m "$commit_message" --quiet || print_error "Failed to commit (nothing to commit?)"
+    print_success "Committed successfully"
+fi
+
+echo ""
+
+if [ "$amend_flag" = true ]; then
+    print_step "Force pushing to remote..."
+    git push --force-with-lease origin "$branch_name" --quiet > /dev/null 2>&1 || print_error "Failed to push"
+    print_success "Force pushed to origin/${branch_name}"
+else
+    print_step "Pushing to remote..."
+    git push -u origin "$branch_name" --quiet > /dev/null 2>&1 || print_error "Failed to push"
+    print_success "Pushed to origin/${branch_name}"
+fi
+
+echo ""
+
+if [ "$no_pr" = false ]; then
+    print_step "Checking for existing PR..."
+    existing_pr=$(gh pr list --head "$branch_name" --json number --jq '.[0].number' 2>/dev/null)
+
+    if [ -n "$existing_pr" ]; then
+        pr_url=$(gh pr view "$existing_pr" --json url --jq '.url')
+
+        if [ "$ready_flag" = true ]; then
+            is_draft=$(gh pr view "$existing_pr" --json isDraft --jq '.isDraft')
+            if [ "$is_draft" = "true" ]; then
+                print_step "Marking PR as ready for review..."
+                gh pr ready "$existing_pr" > /dev/null || print_error "Failed to mark PR as ready"
+                gh pr edit "$existing_pr" --add-reviewer "$TEAM_REVIEWER" > /dev/null || print_error "Failed to add reviewer"
+                print_success "PR marked as ready: ${pr_url}"
+            else
+                print_info "PR already ready: ${pr_url}"
+            fi
+        else
+            if [ "$amend_flag" = true ]; then
+                print_info "PR updated: ${pr_url}"
+            else
+                print_info "PR already exists: ${pr_url}"
+            fi
+        fi
+    else
+        if [ "$amend_flag" = false ]; then
+            if [ "$ready_flag" = true ]; then
+                print_step "Creating PR (ready for review)..."
+                gh pr create --title "$commit_message" --body "" --assignee @me --reviewer "$TEAM_REVIEWER" > /dev/null || print_error "Failed to create PR"
+            else
+                print_step "Creating draft PR..."
+                gh pr create --title "$commit_message" --body "" --assignee @me --draft > /dev/null || print_error "Failed to create PR"
+            fi
+
+            pr_url=$(gh pr view --json url --jq '.url')
+            pr_status=$([ "$ready_flag" = true ] && echo "ready" || echo "draft")
+            print_success "PR created (${pr_status}): ${pr_url}"
+        fi
+    fi
+
+    echo ""
+fi
+
+echo ""
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+if [ "$no_pr" = true ]; then
+    echo -e "${GREEN}🚀 Successfully shipped! (no PR created)${NC}"
+else
+    echo -e "${GREEN}🚀 Successfully shipped!${NC}"
+fi
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo ""
