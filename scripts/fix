@@ -1,0 +1,520 @@
+#!/bin/bash
+
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+print_step() {
+    echo -e "${BLUE}▸${NC} $1"
+}
+
+print_success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}✗${NC} $1"
+    exit 1
+}
+
+print_info() {
+    echo -e "${YELLOW}ℹ${NC} $1"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠${NC} $1"
+}
+
+SENTRY_ORG="dotworld-sarl-zv"
+SENTRY_PROJECT="carjudge-api"
+DEFAULT_LIMIT=20
+
+show_help() {
+    echo ""
+    echo "Usage:"
+    echo "  fix                  Fetch unresolved Sentry issues and triage/fix them"
+    echo "  fix --help           Show this help message"
+    echo ""
+    echo "Flags:"
+    echo "  --limit N            Override issue fetch limit (default: ${DEFAULT_LIMIT})"
+    echo "  --skip-triage        Skip Claude triage, go straight to fix"
+    echo ""
+    echo "Workflow:"
+    echo "  1. Fetches unresolved Sentry issues"
+    echo "  2. Displays them as a numbered table"
+    echo "  3. You pick an issue to investigate"
+    echo "  4. Claude triages: is it a codebase bug or external noise?"
+    echo "  5a. If noise → archive on Sentry"
+    echo "  5b. If bug → create Linear issue, implement fix, ship it"
+    echo ""
+    echo "Examples:"
+    echo "  fix"
+    echo "  fix --limit 5"
+    echo "  fix --skip-triage"
+    echo ""
+    exit 0
+}
+
+check_dependencies() {
+    local missing_deps=()
+
+    command -v git >/dev/null 2>&1 || missing_deps+=("git")
+    command -v jq >/dev/null 2>&1 || missing_deps+=("jq")
+    command -v sentry >/dev/null 2>&1 || missing_deps+=("sentry (Sentry CLI)")
+    command -v claude >/dev/null 2>&1 || missing_deps+=("claude (Claude Code CLI)")
+    command -v gh >/dev/null 2>&1 || missing_deps+=("gh (GitHub CLI)")
+
+    if [ ${#missing_deps[@]} -gt 0 ]; then
+        print_error "Missing required dependencies: ${missing_deps[*]}"
+    fi
+}
+
+# Handle --help before dependency checks
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    show_help
+fi
+
+check_dependencies
+
+limit=$DEFAULT_LIMIT
+skip_triage=false
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --help|-h)
+            show_help
+            ;;
+        --limit)
+            if [ -z "$2" ] || ! [[ "$2" =~ ^[1-9][0-9]*$ ]]; then
+                print_error "Invalid --limit value. Must be a positive integer."
+            fi
+            limit=$2
+            shift 2
+            ;;
+        --skip-triage)
+            skip_triage=true
+            shift
+            ;;
+        *)
+            print_error "Unknown option: $1. Use 'fix --help' for usage information."
+            ;;
+    esac
+done
+
+# ─── Step 1: Pre-flight checks ───────────────────────────────────────────────
+
+echo ""
+print_step "Running pre-flight checks..."
+
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    print_error "Not inside a git repository"
+fi
+
+cd "$(git rev-parse --show-toplevel)" || print_error "Failed to cd to repository root"
+
+current_branch=$(git branch --show-current)
+
+if [ -n "$(git status --porcelain)" ]; then
+    echo ""
+    print_error "Working tree is dirty. Commit or stash your changes before running fix."
+fi
+
+if [ "$current_branch" != "master" ] && [ "$current_branch" != "main" ]; then
+    echo ""
+    print_warning "You're on branch '$current_branch', not master/main."
+    if ! read -p "Continue anyway? (y/n): " -n 1 -r response; then
+        echo ""
+        print_info "Aborted (no input)."
+        exit 0
+    fi
+    echo ""
+    if [[ ! $response =~ ^[Yy]$ ]]; then
+        echo ""
+        print_info "Aborted. Switch to the default branch first: git checkout master (or main)"
+        exit 0
+    fi
+fi
+
+print_success "Pre-flight checks passed"
+
+# ─── Step 2: Fetch unresolved Sentry issues ──────────────────────────────────
+
+echo ""
+print_step "Fetching unresolved Sentry issues (limit: ${limit})..."
+
+sentry_stderr=$(mktemp)
+issues_json=$(sentry api "/projects/${SENTRY_ORG}/${SENTRY_PROJECT}/issues/?query=is:unresolved&limit=${limit}&sort=date" 2>"$sentry_stderr")
+sentry_exit=$?
+
+if [ $sentry_exit -ne 0 ]; then
+    sentry_err=$(cat "$sentry_stderr")
+    rm -f "$sentry_stderr"
+    echo ""
+    if echo "$sentry_err" | grep -qi "auth\|unauthorized\|401\|token"; then
+        print_error "Sentry authentication failed. Run 'sentry auth login' or check your SENTRY_AUTH_TOKEN."
+    else
+        print_error "Failed to fetch Sentry issues: ${sentry_err}"
+    fi
+fi
+rm -f "$sentry_stderr"
+
+if ! echo "$issues_json" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    print_error "Unexpected Sentry response format (expected JSON array)."
+fi
+
+issue_count=$(echo "$issues_json" | jq 'length' 2>/dev/null)
+
+if [ -z "$issue_count" ] || [ "$issue_count" = "null" ] || [ "$issue_count" -eq 0 ]; then
+    echo ""
+    print_success "No unresolved issues found. You're all clear!"
+    echo ""
+    exit 0
+fi
+
+print_success "Found ${issue_count} unresolved issues"
+
+# ─── Step 3: Display issues as formatted table ───────────────────────────────
+
+echo ""
+printf "  ${BLUE}%-4s %-70s %-15s %s${NC}\n" "#" "Title" "Assignee" "Events"
+echo -e "  ${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+echo "$issues_json" | jq -r '.[] | [.title, (.assignedTo.name // "-"), .count] | @tsv' | {
+    row=1
+    while IFS=$'\t' read -r title assignee count; do
+        # Truncate title to 68 chars
+        if [ ${#title} -gt 68 ]; then
+            title="${title:0:65}..."
+        fi
+
+        # Truncate assignee to 13 chars
+        if [ ${#assignee} -gt 13 ]; then
+            assignee="${assignee:0:10}..."
+        fi
+
+        printf "  %-4s %-70s %-15s %s\n" "$row" "$title" "$assignee" "$count"
+        row=$((row + 1))
+    done
+}
+
+echo ""
+
+# ─── Step 4: User selects an issue ───────────────────────────────────────────
+
+while true; do
+    if ! read -rp "Select an issue (1-${issue_count}, 0 or q to quit): " selection; then
+        echo ""
+        print_info "Aborted (no input)."
+        exit 0
+    fi
+
+    if [ "$selection" = "q" ] || [ "$selection" = "0" ]; then
+        echo ""
+        print_info "Aborted."
+        exit 0
+    fi
+
+    if [[ "$selection" =~ ^[0-9]+$ ]] && [ "$selection" -ge 1 ] && [ "$selection" -le "$issue_count" ]; then
+        break
+    fi
+
+    print_warning "Invalid selection. Enter a number between 1 and ${issue_count}."
+done
+
+index=$((selection - 1))
+issue_id=$(echo "$issues_json" | jq -r ".[$index].id")
+issue_short_id=$(echo "$issues_json" | jq -r ".[$index].shortId")
+issue_title=$(echo "$issues_json" | jq -r ".[$index].title")
+issue_permalink=$(echo "$issues_json" | jq -r ".[$index].permalink")
+
+echo ""
+print_step "Selected: ${issue_short_id} - ${issue_title}"
+
+# ─── Step 5: Fetch issue details + latest event stacktrace ───────────────────
+
+echo ""
+print_step "Fetching issue details and latest event..."
+
+issue_details=$(sentry api "/issues/${issue_id}/" 2>/dev/null)
+if [ $? -ne 0 ] || [ -z "$issue_details" ]; then
+    print_warning "Could not fetch issue details. Continuing with limited data."
+    issue_details="{}"
+fi
+
+latest_event=$(sentry api "/issues/${issue_id}/events/latest/" 2>/dev/null)
+if [ $? -ne 0 ] || [ -z "$latest_event" ]; then
+    print_warning "Could not fetch latest event. Continuing with issue details only."
+    latest_event="{}"
+fi
+
+# Extract exception info
+exception_type=$(echo "$latest_event" | jq -r '
+    .entries[]? |
+    select(.type == "exception") |
+    .data.values[0].type // empty
+' 2>/dev/null | head -1)
+
+exception_value=$(echo "$latest_event" | jq -r '
+    .entries[]? |
+    select(.type == "exception") |
+    .data.values[0].value // empty
+' 2>/dev/null | head -1)
+
+culprit=$(echo "$issue_details" | jq -r '.culprit // empty' 2>/dev/null)
+
+# Extract in-app stacktrace frames
+stacktrace_frames=$(echo "$latest_event" | jq -r '
+    [
+        .entries[]? |
+        select(.type == "exception") |
+        .data.values[0].stacktrace.frames[]? |
+        select(.inApp == true) |
+        {filename, function, lineNo, context: (.context // [] | map(.[1]) | join("\n"))}
+    ] | if length > 10 then .[-10:] else . end
+' 2>/dev/null)
+
+if [ -z "$stacktrace_frames" ] || [ "$stacktrace_frames" = "null" ] || [ "$stacktrace_frames" = "[]" ]; then
+    stacktrace_frames="[]"
+fi
+
+print_success "Issue details fetched"
+
+echo ""
+printf '  %bIssue:%b     %s\n' "$BLUE" "$NC" "$issue_short_id"
+printf '  %bTitle:%b     %s\n' "$BLUE" "$NC" "$issue_title"
+[ -n "$exception_type" ] && printf '  %bException:%b %s: %s\n' "$BLUE" "$NC" "$exception_type" "$exception_value"
+[ -n "$culprit" ] && printf '  %bCulprit:%b   %s\n' "$BLUE" "$NC" "$culprit"
+printf '  %bURL:%b       %s\n' "$BLUE" "$NC" "$issue_permalink"
+echo ""
+
+# ─── Step 6: Triage with Claude ──────────────────────────────────────────────
+
+is_codebase_related=""
+
+if [ "$skip_triage" = true ]; then
+    print_info "Skipping triage (--skip-triage flag)"
+    is_codebase_related="yes"
+else
+    print_step "Triaging with Claude..."
+    echo ""
+
+    triage_prompt="You are triaging a Sentry error to determine if it is caused by a bug in the codebase that we can fix.
+
+## Issue
+- Title: ${issue_title}
+- Exception: ${exception_type}: ${exception_value}
+- Culprit: ${culprit}
+- In-app stacktrace frames:
+${stacktrace_frames}
+
+## Instructions
+1. Look at the exception type, message, and stacktrace frames.
+2. Check if the referenced files exist in the codebase using the tools available to you.
+3. Determine if this is a bug we can fix in our code, OR if it's caused by external factors (user input, third-party API errors, network issues, expired tokens, etc.) that we cannot reasonably fix.
+
+## Response Format
+Your response MUST start with exactly one of:
+- VERDICT: YES - if this is a codebase bug we can fix
+- VERDICT: NO - if this is external noise or not actionable
+
+Then explain your reasoning in 2-3 sentences."
+
+    triage_response=$(claude -p "$triage_prompt" --allowedTools "Read,Glob,Grep" 2>&1)
+
+    if [ $? -ne 0 ]; then
+        echo ""
+        print_warning "Claude triage failed. Falling back to manual triage."
+        echo ""
+        if ! read -p "Is this issue caused by a bug in the codebase? (y/n): " -n 1 -r response; then
+            echo ""
+            print_info "Aborted (no input)."
+            exit 0
+        fi
+        echo ""
+        if [[ $response =~ ^[Yy]$ ]]; then
+            is_codebase_related="yes"
+        else
+            is_codebase_related="no"
+        fi
+    else
+        echo "$triage_response"
+        echo ""
+
+        if echo "$triage_response" | head -5 | grep -q "^VERDICT: YES"; then
+            is_codebase_related="yes"
+            print_success "Triage verdict: Codebase bug"
+        elif echo "$triage_response" | head -5 | grep -q "^VERDICT: NO"; then
+            is_codebase_related="no"
+            print_success "Triage verdict: Not actionable"
+        else
+            print_warning "Ambiguous triage response. Falling back to manual triage."
+            echo ""
+            if ! read -p "Is this issue caused by a bug in the codebase? (y/n): " -n 1 -r response; then
+                echo ""
+                print_info "Aborted (no input)."
+                exit 0
+            fi
+            echo ""
+            if [[ $response =~ ^[Yy]$ ]]; then
+                is_codebase_related="yes"
+            else
+                is_codebase_related="no"
+            fi
+        fi
+    fi
+fi
+
+echo ""
+
+# ─── Step 7a: Archive if not related ─────────────────────────────────────────
+
+if [ "$is_codebase_related" = "no" ]; then
+    if ! read -p "Archive this issue on Sentry? (y/n): " -n 1 -r response; then
+        echo ""
+        print_info "Aborted (no input)."
+        exit 0
+    fi
+    echo ""
+
+    if [[ $response =~ ^[Yy]$ ]]; then
+        print_step "Archiving issue on Sentry..."
+
+        archive_result=$(sentry api "/issues/${issue_id}/" -X PUT -F status=ignored -F substatus=archived_forever 2>&1)
+
+        if [ $? -eq 0 ]; then
+            echo ""
+            echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo -e "${GREEN}🗂  Issue archived successfully!${NC}"
+            echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+            echo ""
+        else
+            print_error "Failed to archive issue: ${archive_result}"
+        fi
+    else
+        print_info "Skipped archiving."
+        echo ""
+    fi
+
+    exit 0
+fi
+
+# ─── Step 7b: Create Linear issue + Fix + Ship ───────────────────────────────
+
+print_step "Creating Linear issue..."
+echo ""
+
+linear_prompt="Create a bug issue in Linear for the following Sentry error. Use the team that handles the carjudge project.
+
+- Title: [Bug] ${issue_title}
+- Description should include:
+  - Exception: ${exception_type}: ${exception_value}
+  - Culprit: ${culprit}
+  - Sentry URL: ${issue_permalink}
+  - A brief summary of the issue
+
+After creating the issue, output the issue identifier (e.g. DOTO-1234) on a line by itself prefixed with ISSUE_ID:"
+
+linear_response=$(claude -p "$linear_prompt" --allowedTools "mcp__linear-server__create_issue,mcp__linear-server__list_teams" 2>&1)
+
+if [ $? -ne 0 ]; then
+    print_warning "Claude failed to create Linear issue."
+    linear_response=""
+fi
+
+# Parse Linear issue ID from response
+linear_id=""
+if [ -n "$linear_response" ]; then
+    linear_id=$(echo "$linear_response" | grep -oE 'ISSUE_ID:[[:space:]]*([A-Z]+-[0-9]+)' | head -1 | sed 's/ISSUE_ID:[[:space:]]*//')
+
+    # Fallback: try to find any DOTO-XXXX pattern
+    if [ -z "$linear_id" ]; then
+        linear_id=$(echo "$linear_response" | grep -oE 'DOTO-[0-9]+' | head -1)
+    fi
+fi
+
+if [ -z "$linear_id" ]; then
+    echo ""
+    print_warning "Could not parse Linear issue ID from response."
+    read -p "Enter the Linear issue ID manually (e.g. DOTO-1234): " linear_id
+    if [ -z "$linear_id" ]; then
+        print_error "No Linear issue ID provided. Aborting."
+    fi
+    if ! [[ "$linear_id" =~ ^[A-Z]+-[0-9]+$ ]]; then
+        print_error "Invalid Linear issue ID format. Expected format: DOTO-1234"
+    fi
+fi
+
+echo ""
+print_success "Linear issue: ${linear_id}"
+echo ""
+
+# ─── Implement fix with Claude ───────────────────────────────────────────────
+
+print_step "Implementing fix with Claude..."
+echo ""
+
+fix_prompt="Fix the following Sentry issue in the codebase.
+
+## Issue
+- Linear ID: ${linear_id}
+- Sentry ID: ${issue_short_id}
+- Title: ${issue_title}
+- Exception: ${exception_type}: ${exception_value}
+- Culprit: ${culprit}
+- Sentry URL: ${issue_permalink}
+- In-app stacktrace frames:
+${stacktrace_frames}
+
+## Instructions
+1. Investigate the issue in the codebase.
+2. Implement a fix.
+3. Write or update tests to cover the fix.
+4. Run \`vendor/bin/pint --dirty\` to format PHP code.
+5. Do NOT commit the changes - just leave them in the working tree."
+
+claude -p "$fix_prompt" 2>&1
+
+if [ $? -ne 0 ]; then
+    print_error "Claude fix failed. Check the output above for details."
+fi
+
+echo ""
+
+# ─── Ship the fix ────────────────────────────────────────────────────────────
+
+if [ -z "$(git status --porcelain)" ]; then
+    echo ""
+    print_warning "No changes were made by Claude."
+    print_info "Linear issue created: ${linear_id}"
+    print_info "You can fix this manually and ship with: ./ship fix ${linear_id} \"fix description\""
+    echo ""
+    exit 0
+fi
+
+echo ""
+print_step "Changes detected. Shipping the fix..."
+echo ""
+
+# Build a short fix description from the issue title
+fix_description=$(printf '%s' "$issue_title" | tr '\r\n\t' '   ' | tr -s ' ' | cut -c1-60 | tr '[:upper:]' '[:lower:]')
+
+./ship fix "$linear_id" "$fix_description"
+
+if [ $? -eq 0 ]; then
+    echo ""
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${GREEN}🔧 Fix shipped successfully!${NC}"
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    # Resolve the Sentry issue now that the fix has been shipped
+    if sentry api "/issues/${issue_id}/" -X PUT -F status=resolved > /dev/null 2>&1; then
+        echo -e "${GREEN}✓ Sentry issue resolved${NC}"
+    else
+        echo -e "${YELLOW}⚠ Warning: Could not resolve Sentry issue. Resolve it manually.${NC}"
+    fi
+    echo ""
+else
+    print_error "Ship failed. Your changes are still in the working tree. Fix manually and run: ./ship fix ${linear_id} \"${fix_description}\""
+fi
