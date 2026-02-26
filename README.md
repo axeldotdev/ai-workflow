@@ -170,3 +170,33 @@ Les MCP sont utiles quand on a besoin de contexte enrichi sans quitter Claude Co
 - **Skills réutilisables** — Les tâches répétitives sont automatisées une seule fois et utilisables par toute l'équipe.
 - **Scripts standardisés** — Le format des commits, PRs et la gestion des erreurs est identique quel que soit le développeur.
 - **CLIs > MCP** — Les CLIs sont plus fiables, plus rapides et suffisent pour 90% des cas. Les MCP restent disponibles en backup.
+
+## Exemples d'utilisation
+
+### Implémenter un ticket Linear
+
+Copier l'ID d'une issue Linear (app ou CLI), puis dans Claude Code : `Implement linear issue DOTO-1234`. Claude développe, on review, on ship.
+
+> Ce flow manuel est voué à disparaître au profit d'un script `implement` similaire à `fix`.
+
+### Corriger une erreur Sentry (manuel)
+
+Copier l'URL ou l'ID d'une issue Sentry, puis dans Claude Code : `Fix sentry issue PROJ-A1B2`. Claude corrige, on review, on ship.
+
+> Déjà remplacé par le script `fix` dans la plupart des cas.
+
+### Corriger une erreur Sentry (script)
+
+Lancer le script `fix`, sélectionner un ticket Sentry dans la liste, Claude corrige et crée la PR. Il ne reste qu'à review.
+
+### Traiter des tickets en chaîne avec Ralph
+
+Lancer Ralph sur un projet — il traite les tickets les uns après les autres de manière autonome. On review la ou les PRs à la fin.
+
+### Créer un projet
+
+Expliquer le projet à Claude ou brainstormer avec lui. Il invoque le skill pour créer le projet Linear (structure, etc.), puis on continue généralement avec le découpage en tickets.
+
+### Créer un ticket
+
+Même principe que pour un projet, mais pour une seule issue : on explique le besoin, Claude crée le ticket avec les specs et acceptance criteria.
