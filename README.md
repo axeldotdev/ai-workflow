@@ -211,3 +211,5 @@ Expliquer le projet à Claude ou brainstormer avec lui. Il invoque le skill pour
 ### Créer un ticket
 
 Même principe que pour un projet, mais pour une seule issue : on explique le besoin, Claude crée le ticket avec les specs et acceptance criteria.
+
+> Tips: Installez Raycast, installer des extensions et configurer vos hotkeys pour vos applications selon un langage simple (option+t (terminal) => open Ghostty, option+a (ai) => open Claude Desktop, option+b (browser) => open Chrome, etc.)
