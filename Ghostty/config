@@ -1,0 +1,18 @@
+#theme = dark:Catppuccin Mocha, light:Catppuccin Latte
+theme = orng
+window-height = 38
+window-width = 158
+window-padding-x = 8
+window-padding-y = 8
+macos-titlebar-proxy-icon = hidden
+title = " "
+window-title-font-family = "Fira Code"
+font-family = "Fira Code"
+font-size = 16
+font-feature = liga
+adjust-cell-height = 25%
+adjust-cursor-thickness = 2
+quick-terminal-position = center
+quick-terminal-size = 50%, 60%
+quick-terminal-animation-duration = 0
+#keybind = global:cmd+t=toggle_quick_terminal
