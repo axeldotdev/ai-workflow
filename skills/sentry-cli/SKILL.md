@@ -15,6 +15,8 @@ The CLI must be installed and authenticated before use.
 
 ```bash
 curl https://cli.sentry.dev/install -fsS | bash
+curl https://cli.sentry.dev/install -fsS | bash -s -- --version nightly
+brew install getsentry/tools/sentry
 
 # Or install via npm/pnpm/bun
 npm install -g sentry
@@ -82,13 +84,24 @@ sentry auth refresh
 View authentication status
 
 **Flags:**
-- `--showToken - Show the stored token (masked by default)`
+- `--show-token - Show the stored token (masked by default)`
 
 **Examples:**
 
 ```bash
 sentry auth status
 ```
+
+#### `sentry auth token`
+
+Print the stored authentication token
+
+#### `sentry auth whoami`
+
+Show the currently authenticated user
+
+**Flags:**
+- `--json - Output as JSON`
 
 ### Org
 
@@ -99,7 +112,7 @@ Work with Sentry organizations
 List organizations
 
 **Flags:**
-- `--limit <value> - Maximum number of organizations to list - (default: "30")`
+- `-n, --limit <value> - Maximum number of organizations to list - (default: "30")`
 - `--json - Output JSON`
 
 **Examples:**
@@ -110,7 +123,7 @@ sentry org list
 sentry org list --json
 ```
 
-#### `sentry org view <arg0>`
+#### `sentry org view <org>`
 
 View details of an organization
 
@@ -132,15 +145,15 @@ sentry org view my-org -w
 
 Work with Sentry projects
 
-#### `sentry project list`
+#### `sentry project list <org/project>`
 
 List projects
 
 **Flags:**
-- `--org <value> - Organization slug`
-- `--limit <value> - Maximum number of projects to list - (default: "30")`
+- `-n, --limit <value> - Maximum number of projects to list - (default: "30")`
 - `--json - Output JSON`
-- `--platform <value> - Filter by platform (e.g., javascript, python)`
+- `-c, --cursor <value> - Pagination cursor (use "last" to continue from previous page)`
+- `-p, --platform <value> - Filter by platform (e.g., javascript, python)`
 
 **Examples:**
 
@@ -155,58 +168,88 @@ sentry project list <org-slug>
 sentry project list --platform javascript
 ```
 
-#### `sentry project view <arg0>`
+#### `sentry project view <org/project>`
 
 View details of a project
 
 **Flags:**
-- `--org <value> - Organization slug`
 - `--json - Output as JSON`
 - `-w, --web - Open in browser`
 
 **Examples:**
 
 ```bash
-sentry project view <project-slug>
+# Auto-detect from DSN or config
+sentry project view
 
-sentry project view frontend --org my-org
+# Explicit org and project
+sentry project view <org>/<project>
 
-sentry project view frontend -w
+# Find project across all orgs
+sentry project view <project>
+
+sentry project view my-org/frontend
+
+sentry project view my-org/frontend -w
 ```
 
 ### Issue
 
 Manage Sentry issues
 
-#### `sentry issue list`
+#### `sentry issue list <org/project>`
 
 List issues in a project
 
 **Flags:**
-- `--org <value> - Organization slug`
-- `--project <value> - Project slug`
-- `--query <value> - Search query (Sentry search syntax)`
-- `--limit <value> - Maximum number of issues to return - (default: "10")`
-- `--sort <value> - Sort by: date, new, freq, user - (default: "date")`
-- `--json - Output as JSON`
+- `-q, --query <value> - Search query (Sentry search syntax)`
+- `-n, --limit <value> - Maximum number of issues to list - (default: "25")`
+- `-s, --sort <value> - Sort by: date, new, freq, user - (default: "date")`
+- `-t, --period <value> - Time period for issue activity (e.g. 24h, 14d, 90d) - (default: "90d")`
+- `--json - Output JSON`
+- `-c, --cursor <value> - Pagination cursor — only for <org>/ mode (use "last" to continue)`
 
 **Examples:**
 
 ```bash
-sentry issue list --org <org-slug> --project <project-slug>
+# Explicit org and project
+sentry issue list <org>/<project>
 
-sentry issue list --org my-org --project frontend
+# All projects in an organization
+sentry issue list <org>/
 
-sentry issue list --org my-org --project frontend --query "TypeError"
+# Search for project across all accessible orgs
+sentry issue list <project>
+
+# Auto-detect from DSN or config
+sentry issue list
+
+# List issues in a specific project
+sentry issue list my-org/frontend
+
+sentry issue list my-org/
+
+sentry issue list frontend
+
+sentry issue list my-org/frontend --query "TypeError"
+
+sentry issue list my-org/frontend --sort freq --limit 20
+
+# Show only unresolved issues
+sentry issue list my-org/frontend --query "is:unresolved"
+
+# Show resolved issues
+sentry issue list my-org/frontend --query "is:resolved"
+
+# Combine with other search terms
+sentry issue list my-org/frontend --query "is:unresolved TypeError"
 ```
 
-#### `sentry issue explain <arg0>`
+#### `sentry issue explain <issue>`
 
 Analyze an issue's root cause using Seer AI
 
 **Flags:**
-- `--org <value> - Organization slug (required for short IDs if not auto-detected)`
-- `--project <value> - Project slug (required for short suffixes if not auto-detected)`
 - `--json - Output as JSON`
 - `--force - Force new analysis even if one exists`
 
@@ -218,25 +261,24 @@ sentry issue explain <issue-id>
 # By numeric issue ID
 sentry issue explain 123456789
 
-# By short ID
-sentry issue explain MYPROJECT-ABC --org my-org
+# By short ID with org prefix
+sentry issue explain my-org/MYPROJECT-ABC
 
-# By short suffix (requires project context)
-sentry issue explain G --org my-org --project my-project
+# By project-suffix format
+sentry issue explain myproject-G
 
 # Force a fresh analysis
 sentry issue explain 123456789 --force
 ```
 
-#### `sentry issue plan <arg0>`
+#### `sentry issue plan <issue>`
 
 Generate a solution plan using Seer AI
 
 **Flags:**
-- `--org <value> - Organization slug (required for short IDs if not auto-detected)`
-- `--project <value> - Project slug (required for short suffixes if not auto-detected)`
 - `--cause <value> - Root cause ID to plan (required if multiple causes exist)`
 - `--json - Output as JSON`
+- `--force - Force new plan even if one exists`
 
 **Examples:**
 
@@ -249,20 +291,21 @@ sentry issue plan 123456789
 # Specify which root cause to plan for (if multiple were found)
 sentry issue plan 123456789 --cause 0
 
-# By short ID
-sentry issue plan MYPROJECT-ABC --org my-org --cause 1
+# By short ID with org prefix
+sentry issue plan my-org/MYPROJECT-ABC --cause 1
+
+# By project-suffix format
+sentry issue plan myproject-G --cause 0
 ```
 
-#### `sentry issue view <arg0>`
+#### `sentry issue view <issue>`
 
 View details of a specific issue
 
 **Flags:**
-- `--org <value> - Organization slug (required for short IDs if not auto-detected)`
-- `--project <value> - Project slug (required for short suffixes if not auto-detected)`
 - `--json - Output as JSON`
 - `-w, --web - Open in browser`
-- `--spans <value> - Show span tree with N levels of nesting depth`
+- `--spans <value> - Span tree depth limit (number, "all" for unlimited, "no" to disable) - (default: "3")`
 
 **Examples:**
 
@@ -282,16 +325,14 @@ sentry issue view FRONT-ABC -w
 
 View Sentry events
 
-#### `sentry event view <arg0>`
+#### `sentry event view <args...>`
 
 View details of a specific event
 
 **Flags:**
-- `--org <value> - Organization slug`
-- `--project <value> - Project slug`
 - `--json - Output as JSON`
 - `-w, --web - Open in browser`
-- `--spans <value> - Show span tree from the event's trace`
+- `--spans <value> - Span tree depth limit (number, "all" for unlimited, "no" to disable) - (default: "3")`
 
 **Examples:**
 
@@ -363,6 +404,294 @@ sentry api /organizations/ --include
 # Get all issues (automatically follows pagination)
 sentry api /projects/my-org/my-project/issues/ --paginate
 ```
+
+### Cli
+
+CLI-related commands
+
+#### `sentry cli feedback <message...>`
+
+Send feedback about the CLI
+
+#### `sentry cli fix`
+
+Diagnose and repair CLI database issues
+
+**Flags:**
+- `--dry-run - Show what would be fixed without making changes`
+
+#### `sentry cli setup`
+
+Configure shell integration
+
+**Flags:**
+- `--install - Install the binary from a temp location to the system path`
+- `--method <value> - Installation method (curl, npm, pnpm, bun, yarn)`
+- `--channel <value> - Release channel to persist (stable or nightly)`
+- `--no-modify-path - Skip PATH modification`
+- `--no-completions - Skip shell completion installation`
+- `--no-agent-skills - Skip agent skill installation for AI coding assistants`
+- `--quiet - Suppress output (for scripted usage)`
+
+#### `sentry cli upgrade <version>`
+
+Update the Sentry CLI to the latest version
+
+**Flags:**
+- `--check - Check for updates without installing`
+- `--force - Force upgrade even if already on the latest version`
+- `--method <value> - Installation method to use (curl, brew, npm, pnpm, bun, yarn)`
+
+### Repo
+
+Work with Sentry repositories
+
+#### `sentry repo list <org/project>`
+
+List repositories
+
+**Flags:**
+- `-n, --limit <value> - Maximum number of repositories to list - (default: "30")`
+- `--json - Output JSON`
+- `-c, --cursor <value> - Pagination cursor (use "last" to continue from previous page)`
+
+### Team
+
+Work with Sentry teams
+
+#### `sentry team list <org/project>`
+
+List teams
+
+**Flags:**
+- `-n, --limit <value> - Maximum number of teams to list - (default: "30")`
+- `--json - Output JSON`
+- `-c, --cursor <value> - Pagination cursor (use "last" to continue from previous page)`
+
+**Examples:**
+
+```bash
+# Auto-detect organization or list all
+sentry team list
+
+# List teams in a specific organization
+sentry team list <org-slug>
+
+# Limit results
+sentry team list --limit 10
+
+sentry team list --json
+```
+
+### Log
+
+View Sentry logs
+
+#### `sentry log list <org/project>`
+
+List logs from a project
+
+**Flags:**
+- `-n, --limit <value> - Number of log entries (1-1000) - (default: "100")`
+- `-q, --query <value> - Filter query (Sentry search syntax)`
+- `-f, --follow <value> - Stream logs (optionally specify poll interval in seconds)`
+- `--json - Output as JSON`
+
+**Examples:**
+
+```bash
+# Auto-detect from DSN or config
+sentry log list
+
+# Explicit org and project
+sentry log list <org>/<project>
+
+# Search for project across all accessible orgs
+sentry log list <project>
+
+# List last 100 logs (default)
+sentry log list
+
+# Stream with default 2-second poll interval
+sentry log list -f
+
+# Stream with custom 5-second poll interval
+sentry log list -f 5
+
+# Show only error logs
+sentry log list -q 'level:error'
+
+# Filter by message content
+sentry log list -q 'database'
+
+# Show last 50 logs
+sentry log list --limit 50
+
+# Show last 500 logs
+sentry log list -n 500
+
+# Stream error logs from a specific project
+sentry log list my-org/backend -f -q 'level:error'
+```
+
+#### `sentry log view <args...>`
+
+View details of a specific log entry
+
+**Flags:**
+- `--json - Output as JSON`
+- `-w, --web - Open in browser`
+
+**Examples:**
+
+```bash
+# Auto-detect from DSN or config
+sentry log view <log-id>
+
+# Explicit org and project
+sentry log view <org>/<project> <log-id>
+
+# Search for project across all accessible orgs
+sentry log view <project> <log-id>
+
+sentry log view 968c763c740cfda8b6728f27fb9e9b01
+
+sentry log view 968c763c740cfda8b6728f27fb9e9b01 -w
+
+sentry log view my-org/backend 968c763c740cfda8b6728f27fb9e9b01
+
+sentry log list --json | jq '.[] | select(.level == "error")'
+```
+
+### Trace
+
+View distributed traces
+
+#### `sentry trace list <org/project>`
+
+List recent traces in a project
+
+**Flags:**
+- `-n, --limit <value> - Number of traces (1-1000) - (default: "20")`
+- `-q, --query <value> - Search query (Sentry search syntax)`
+- `-s, --sort <value> - Sort by: date, duration - (default: "date")`
+- `--json - Output as JSON`
+
+#### `sentry trace view <args...>`
+
+View details of a specific trace
+
+**Flags:**
+- `--json - Output as JSON`
+- `-w, --web - Open in browser`
+- `--spans <value> - Span tree depth limit (number, "all" for unlimited, "no" to disable) - (default: "3")`
+
+### Issues
+
+List issues in a project
+
+#### `sentry issues <org/project>`
+
+List issues in a project
+
+**Flags:**
+- `-q, --query <value> - Search query (Sentry search syntax)`
+- `-n, --limit <value> - Maximum number of issues to list - (default: "25")`
+- `-s, --sort <value> - Sort by: date, new, freq, user - (default: "date")`
+- `-t, --period <value> - Time period for issue activity (e.g. 24h, 14d, 90d) - (default: "90d")`
+- `--json - Output JSON`
+- `-c, --cursor <value> - Pagination cursor — only for <org>/ mode (use "last" to continue)`
+
+### Orgs
+
+List organizations
+
+#### `sentry orgs`
+
+List organizations
+
+**Flags:**
+- `-n, --limit <value> - Maximum number of organizations to list - (default: "30")`
+- `--json - Output JSON`
+
+### Projects
+
+List projects
+
+#### `sentry projects <org/project>`
+
+List projects
+
+**Flags:**
+- `-n, --limit <value> - Maximum number of projects to list - (default: "30")`
+- `--json - Output JSON`
+- `-c, --cursor <value> - Pagination cursor (use "last" to continue from previous page)`
+- `-p, --platform <value> - Filter by platform (e.g., javascript, python)`
+
+### Repos
+
+List repositories
+
+#### `sentry repos <org/project>`
+
+List repositories
+
+**Flags:**
+- `-n, --limit <value> - Maximum number of repositories to list - (default: "30")`
+- `--json - Output JSON`
+- `-c, --cursor <value> - Pagination cursor (use "last" to continue from previous page)`
+
+### Teams
+
+List teams
+
+#### `sentry teams <org/project>`
+
+List teams
+
+**Flags:**
+- `-n, --limit <value> - Maximum number of teams to list - (default: "30")`
+- `--json - Output JSON`
+- `-c, --cursor <value> - Pagination cursor (use "last" to continue from previous page)`
+
+### Logs
+
+List logs from a project
+
+#### `sentry logs <org/project>`
+
+List logs from a project
+
+**Flags:**
+- `-n, --limit <value> - Number of log entries (1-1000) - (default: "100")`
+- `-q, --query <value> - Filter query (Sentry search syntax)`
+- `-f, --follow <value> - Stream logs (optionally specify poll interval in seconds)`
+- `--json - Output as JSON`
+
+### Traces
+
+List recent traces in a project
+
+#### `sentry traces <org/project>`
+
+List recent traces in a project
+
+**Flags:**
+- `-n, --limit <value> - Number of traces (1-1000) - (default: "20")`
+- `-q, --query <value> - Search query (Sentry search syntax)`
+- `-s, --sort <value> - Sort by: date, duration - (default: "date")`
+- `--json - Output as JSON`
+
+### Whoami
+
+Show the currently authenticated user
+
+#### `sentry whoami`
+
+Show the currently authenticated user
+
+**Flags:**
+- `--json - Output as JSON`
 
 ## Output Formats
 
