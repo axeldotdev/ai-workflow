@@ -80,6 +80,23 @@ Workflow complet de gestion des erreurs de production :
 
 Utilise **Sentry CLI**, **Linear CLI** et **GitHub CLI**.
 
+## Git Worktrees
+
+Les [git worktrees](https://git-scm.com/docs/git-worktree) permettent d'avoir plusieurs branches checkout en même temps dans des dossiers séparés, sans avoir à cloner le repo plusieurs fois. Concrètement, chaque worktree est un dossier indépendant avec sa propre branche, mais ils partagent tous le même historique git.
+
+Je les utilise dans deux cas : quand je dois corriger plusieurs erreurs Sentry en parallèle (un worktree par fix), ou quand Claude Code travaille sur un ticket Linear long — ça me permet de garder mon repo principal libre pour continuer à faire autre chose pendant ce temps.
+
+```bash
+# Créer un worktree sur une nouvelle branche
+git worktree add ../carjudge-fix-auth fix/auth-error
+
+# Lister les worktrees actifs
+git worktree list
+
+# Supprimer un worktree après merge
+git worktree remove ../carjudge-fix-auth
+```
+
 ## Plugins Claude Code
 
 Les plugins ajoutent des capacités spécialisées à Claude Code.
@@ -95,6 +112,10 @@ Les plugins ajoutent des capacités spécialisées à Claude Code.
 | `ralph-loop` | Boucle d'itération automatisée |
 
 [https://github.com/anthropics/claude-plugins-official/tree/main/plugins](https://github.com/anthropics/claude-plugins-official/tree/main/plugins)
+
+## Counselors — Multi-agents en parallèle
+
+[Counselors](https://github.com/aarondfrancis/counselors) permet de dispatcher un même prompt à plusieurs agents IA (Claude Code, Codex, Gemini, Amp) en parallèle et de collecter leurs réponses dans un dossier structuré. Pas de MCP, pas de clés API supplémentaires — il appelle directement les CLIs installés localement. Utile pour obtenir un second avis technique, comparer des approches ou faire une code review multi-modèles. Il s'intègre dans Claude Code via un slash command `/counselors`.
 
 ## MCP (Model Context Protocol)
 
