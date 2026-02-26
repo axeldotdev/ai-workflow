@@ -40,11 +40,15 @@ Liste tout ce qui a été fait la veille : PRs GitHub et issues Linear.
 
 **Cas d'usage :** préparer un daily standup en 10 secondes.
 
+> Va peut-être devenir un script Bash pour pouvoir l'utiliser en dehors de Claude
+
 ### `retro`
 
 Même principe que `daily` mais sur les 2 dernières semaines.
 
 **Cas d'usage :** préparer une rétrospective, rédiger un status update.
+
+> Va peut-être devenir un script Bash pour pouvoir l'utiliser en dehors de Claude
 
 ### `document`
 
