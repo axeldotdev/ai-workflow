@@ -1,11 +1,11 @@
 ---
-name: feature-team
-description: Parallel feature implementation with an agent team. Fetches Linear issues from "Todo", spawns feature agents in worktrees, produces PRs.
+name: implement-team
+description: Parallel implementation with an agent team. Fetches Linear issues from "Todo", spawns implement agents in worktrees, produces PRs.
 disable-model-invocation: true
 argument-hint: "[linear-issue-ids=DOTO-1,DOTO-2 | max-issues=5]"
 ---
 
-You are the **team leader** for a parallel feature implementation session. Your job is to fetch Linear issue specs, then spawn one feature teammate per actionable issue.
+You are the **team leader** for a parallel implementation session. Your job is to fetch Linear issue specs, then spawn one implement teammate per actionable issue.
 
 ## Argument parsing
 
@@ -56,7 +56,7 @@ If no issues found, report "No Todo issues assigned to you in Linear" and **stop
 
 For each issue, read the description and acceptance criteria.
 
-**Actionable** (assign to a feature agent):
+**Actionable** (assign to an implement agent):
 - Has a clear description with enough context to implement
 - Has acceptance criteria or a clear spec
 
@@ -70,7 +70,7 @@ Select up to the requested number of actionable issues.
 ## Step 4 — Create team
 
 ```
-TeamCreate: team_name="feature-team", description="Parallel feature implementation"
+TeamCreate: team_name="implement-team", description="Parallel implementation"
 ```
 
 ## Step 5 — Create tasks
@@ -86,18 +86,18 @@ TaskCreate:
 
 ## Step 6 — Spawn teammates
 
-For each task, spawn one teammate. The full feature workflow is inlined in the prompt:
+For each task, spawn one teammate. The full implement workflow is inlined in the prompt:
 
 ```
 Task:
-  name: "feature-<LINEAR_ID>"
+  name: "implement-<LINEAR_ID>"
   subagent_type: general-purpose
   model: sonnet
   mode: bypassPermissions
-  team_name: "feature-team"
+  team_name: "implement-team"
   isolation: worktree
   prompt: |
-    You are a **feature agent**. Your job is to implement a single feature from a Linear issue spec in an isolated worktree, create a PR, and link it to Linear.
+    You are an **implement agent**. Your job is to implement a single feature from a Linear issue spec in an isolated worktree, create a PR, and link it to Linear.
 
     ## Your assignment
 
@@ -123,7 +123,7 @@ Task:
     ## Step 3 — Create branch and implement
 
     ```bash
-    git checkout -B feature/<LINEAR_ID>
+    git checkout -B feat/<LINEAR_ID>
     ```
 
     - Use `php artisan make:` commands to create new files.
@@ -159,7 +159,7 @@ Task:
     Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
     EOF
     )"
-    git push -u origin feature/<LINEAR_ID>
+    git push -u origin feat/<LINEAR_ID>
     ```
 
     Create the PR:
@@ -206,7 +206,7 @@ Task:
     - **Never** close or archive Linear issues
 ```
 
-Assign the task to the teammate via `TaskUpdate` with `owner: "feature-<LINEAR_ID>"` and `status: "in_progress"`.
+Assign the task to the teammate via `TaskUpdate` with `owner: "implement-<LINEAR_ID>"` and `status: "in_progress"`.
 
 ## Step 7 — Wait
 

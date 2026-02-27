@@ -1,5 +1,5 @@
 ---
-name: feature
+name: implement
 description: Implements a feature from a Linear issue spec. Reads the spec, understands codebase context, implements the feature, runs tests, and creates a PR linked to Linear.
 argument-hint: "<linear-issue-id>"
 ---
@@ -12,7 +12,7 @@ Implement the feature described in Linear issue **$ARGUMENTS** for `mus-inn/carj
 2. **Fetch spec** — `linear issue view $ARGUMENTS --json`. Read title, description, acceptance criteria. Stop if spec is too vague.
 3. **Context** — Read `CLAUDE.md`, sibling files, related models/tests. Use `search-docs` for Laravel ecosystem packages.
 4. **Plan** — List files to create, modify, and tests to write.
-5. **Branch** — `git checkout -B feature/<LINEAR_ID>`.
+5. **Branch** — `git checkout -B feat/<LINEAR_ID>`.
 6. **Implement** — Use `php artisan make:` commands. Follow sibling conventions strictly.
 7. **Test** — Create Pest tests (`php artisan make:test --pest`). Use factories and existing states.
 8. **Format & test** — `vendor/bin/pint --dirty --format agent`, then `php artisan test --compact --filter=<RelevantTest>`.

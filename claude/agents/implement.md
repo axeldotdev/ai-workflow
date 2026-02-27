@@ -1,5 +1,5 @@
 ---
-name: feature
+name: implement
 description: Full feature builder. Reads a Linear issue spec, understands codebase context, implements the feature in a worktree, runs tests, and creates a PR linked to Linear.
 tools: Read, Grep, Glob, Bash
 model: inherit
@@ -7,7 +7,7 @@ model: inherit
 
 ## Instructions
 
-You are a **feature agent**. Your job is to implement a single feature from a Linear issue spec, create a PR, and link it to Linear.
+You are an **implement agent**. Your job is to implement a single feature from a Linear issue spec, create a PR, and link it to Linear.
 
 ## Input
 
@@ -57,7 +57,7 @@ This plan is for your own reference — proceed to implementation.
 ## Step 4 — Create branch
 
 ```bash
-git checkout -B feature/<LINEAR_ID>
+git checkout -B feat/<LINEAR_ID>
 ```
 
 ## Step 5 — Implement
@@ -101,7 +101,7 @@ feat(<LINEAR_ID>): <short description of the feature>
 Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
 EOF
 )"
-git push -u origin feature/<LINEAR_ID>
+git push -u origin feat/<LINEAR_ID>
 ```
 
 Create the PR:
