@@ -35,6 +35,8 @@ J'utilise aussi ponctuellement **Codex** (OpenAI), **OpenCode** et **Gemini CLI*
 
 Les skills globaux sont disponibles dans tous les projets. Ils servent à des tâches transversales qui ne dépendent pas d'une codebase spécifique.
 
+**Réflexion et apprentissage**
+
 ### `brainstorm`
 
 Aide à structurer une réflexion sur une idée. Génère des bullet points, des schémas et pose des questions pour challenger le concept.
@@ -52,6 +54,8 @@ Aide à comprendre un sujet, un package ou un outil. Génère des explications p
 Compare plusieurs outils ou packages de manière structurée (fonctionnalités, performances, maintenance, communauté).
 
 **Cas d'usage :** choisir entre deux packages, évaluer des alternatives à un outil existant.
+
+**Suivi et reporting**
 
 ### `daily`
 
@@ -75,9 +79,117 @@ Génère un document Markdown à partir d'une feature, un package, un ticket Lin
 
 **Cas d'usage :** documenter une feature livrée, créer une spec technique, générer de la doc pour l'équipe.
 
+**Workflow de production**
+
+### `fix`
+
+Corrige une issue Sentry de bout en bout : lecture de la stacktrace, analyse de la cause racine, fix minimal, tests, puis création de la PR liée à Linear et Sentry.
+
+**Cas d'usage :** corriger un bug remonté par Sentry sans quitter le terminal.
+
+### `review`
+
+Review une PR GitHub en profondeur : lecture du diff et des fichiers modifiés en contexte, analyse sécurité/logique/conventions, puis post d'une review formelle avec commentaires inline.
+
+**Cas d'usage :** reviewer une PR automatiquement avant la review humaine.
+
+### `linear-issue`
+
+Rédige des tickets Linear optimisés pour Claude Code et Ralph : chemins de fichiers exacts, étapes de vérification, critères d'acceptation avec commandes exécutables.
+
+**Cas d'usage :** écrire un ticket qu'un agent peut exécuter sans clarification.
+
+### `linear-project`
+
+Rédige des PRDs pour projets Linear : contexte, objectifs, contraintes techniques, requirements détaillés et critères d'acceptation.
+
+**Cas d'usage :** structurer un nouveau projet avant de le découper en tickets.
+
+**Test et exploration**
+
+### `dogfood`
+
+Teste une application web de manière systématique via `agent-browser` : navigation, interactions, captures d'écran, vidéos de reproduction, et rapport structuré avec preuves pour chaque issue trouvée.
+
+**Cas d'usage :** faire un QA exploratoire complet d'une app web.
+
+### `agent-browser`
+
+Automatisation navigateur en CLI via `agent-browser` : navigation, remplissage de formulaires, captures d'écran, extraction de données, sessions persistantes.
+
+**Cas d'usage :** automatiser des interactions web depuis le terminal.
+
+**Références CLI**
+
+### `github-cli`
+
+Référence complète de `gh` : PRs, issues, releases, code search, workflow runs, API.
+
+**Cas d'usage :** trouver la bonne commande `gh` pour une opération GitHub.
+
+### `linear-cli`
+
+Référence complète de `linear` : issues, équipes, projets, milestones, initiatives, labels, documents, API GraphQL.
+
+**Cas d'usage :** trouver la bonne commande `linear` pour une opération Linear.
+
+### `sentry-cli`
+
+Référence complète de `sentry` : issues, événements, projets, organisations, API.
+
+**Cas d'usage :** trouver la bonne commande `sentry` pour une opération Sentry.
+
 ## Agents
 
 Les agents sont des configurations autonomes de Claude Code avec des instructions détaillées, un modèle dédié et des skills pré-chargés. Contrairement aux skills qui ajoutent une capacité ponctuelle, un agent enchaîne plusieurs étapes de bout en bout sans intervention.
+
+### `fixer`
+
+Correcteur de bugs Sentry en worktree. Lit la stacktrace, identifie la cause racine, applique un fix minimal, lance les tests et crée une PR liée à Linear et Sentry.
+
+**Modèle :** inherit | **Outils :** Read, Grep, Glob, Bash
+
+### `review`
+
+Reviewer de PR GitHub. Fetch le code via ref (sans toucher à la branche), lit les fichiers modifiés en contexte, et poste une review formelle avec commentaires inline en français.
+
+**Modèle :** inherit | **Outils :** Read, Grep, Glob, Bash
+
+### `deep-explore`
+
+Exploration sémantique de codebase via `grepai`. Recherche par intention (`grepai search`), trace les graphes d'appels (`grepai trace`), et synthétise les résultats.
+
+**Modèle :** inherit | **Outils :** Read, Grep, Glob, Bash
+
+### `reviewer`
+
+> Agent global (`~/.claude/agents/`)
+
+Version complète du reviewer, utilisable en mode batch (toutes les PRs ouvertes) ou unitaire (une PR spécifique). Détecte automatiquement le mode selon l'input. Crée un worktree temporaire en read-only pour chaque PR.
+
+**Modèle :** sonnet | **Skills :** github-cli, linear-cli, sentry-cli
+
+## Équipes d'agents
+
+> **Expérimental** — Nécessite `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` dans les settings.
+
+Les équipes d'agents permettent de paralléliser des tâches répétitives. Un agent leader trie le travail, puis spawne des agents spécialisés dans des worktrees isolés. Chaque agent travaille de manière autonome et rapporte ses résultats au leader.
+
+### `fix-team`
+
+Triage les issues Sentry non résolues, archive le bruit (erreurs infra, vendor), puis spawne un fixer par bug actionnable dans un worktree isolé. Produit un tableau de synthèse en fin de session.
+
+**Cas d'usage :** traiter un backlog Sentry en une seule commande.
+
+**Modèle :** sonnet (fixers) | **Isolation :** worktree par fixer
+
+### `review-team`
+
+Liste les PRs ouvertes, filtre les drafts et les PRs en échec CI, puis spawne un reviewer par PR qualifiée dans un worktree isolé. Produit un tableau de synthèse avec les verdicts.
+
+**Cas d'usage :** reviewer toutes les PRs ouvertes d'un coup.
+
+**Modèle :** sonnet (reviewers) | **Isolation :** worktree par reviewer
 
 ## Scripts Bash
 
