@@ -1,5 +1,5 @@
 ---
-name: review
+name: reviewer
 description: Deep single-PR code reviewer. Checks out PR code, reads changed files in context, and submits findings focusing on security, logic, conventions, and architecture — skipping everything CI already covers.
 tools: Read, Grep, Glob, Bash
 model: inherit

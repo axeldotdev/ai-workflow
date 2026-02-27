@@ -151,7 +151,7 @@ Correcteur de bugs Sentry en worktree. Lit la stacktrace, identifie la cause rac
 
 ### `reviewer`
 
-Reviewer de PR GitHub. Fetch le code via ref (sans toucher à la branche), lit les fichiers modifiés en contexte, et poste une review formelle avec commentaires inline en français.
+Reviewer de PR GitHub. Utilisable en mode batch (toutes les PRs ouvertes) ou unitaire (une PR spécifique). Fetch le code via ref (sans toucher à la branche), lit les fichiers modifiés en contexte, et poste une review formelle avec commentaires inline en français.
 
 **Modèle :** inherit | **Outils :** Read, Grep, Glob, Bash
 
