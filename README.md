@@ -11,6 +11,14 @@ npx skills add https://github.com/vercel-labs/agent-browser --skill dogfood
 
 Ajoutez les skills dans `$HOME/.claude/skills`, les agents dans `$HOME/.claude/agents` et les scripts des agents dans `$HOME/.claude/scripts`
 
+Modifier votre configuration Claude dans `$HOME/.claude/settings.json` pour activer les équipes d'agents :
+
+```
+"env": {
+  "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+}
+```
+
 ## Stack d'outils
 
 | Outil | Rôle | Lien |
@@ -23,7 +31,7 @@ Ajoutez les skills dans `$HOME/.claude/skills`, les agents dans `$HOME/.claude/a
 
 J'utilise aussi ponctuellement **Codex** (OpenAI), **OpenCode** et **Gemini CLI** selon les cas d'usage.
 
-## Skills globaux
+## Skills
 
 Les skills globaux sont disponibles dans tous les projets. Ils servent à des tâches transversales qui ne dépendent pas d'une codebase spécifique.
 
@@ -70,14 +78,6 @@ Génère un document Markdown à partir d'une feature, un package, un ticket Lin
 ## Agents
 
 Les agents sont des configurations autonomes de Claude Code avec des instructions détaillées, un modèle dédié et des skills pré-chargés. Contrairement aux skills qui ajoutent une capacité ponctuelle, un agent enchaîne plusieurs étapes de bout en bout sans intervention.
-
-### `fixer`
-
-Résout automatiquement les erreurs de production remontées par Sentry. L'agent récupère l'issue, analyse la root cause via Seer AI, applique un fix minimal dans un git worktree isolé, lance les tests, puis crée la PR GitHub et l'issue Linear avec un linking bidirectionnel complet (Linear ↔ PR ↔ Sentry). Il ne merge jamais, ne push jamais sur main et ne résout jamais l'issue Sentry — ces actions restent manuelles.
-
-**Cas d'usage — Single issue :** coller un ID ou une URL Sentry dans Claude Code (`Fix sentry issue PROJ-A1B2`). L'agent crée un worktree, corrige, commit, push, crée la PR et lie le tout. Il ne reste qu'à review.
-
-**Cas d'usage — Batch :** demander de corriger les erreurs non résolues (`Fix unresolved Sentry issues`). L'agent récupère les issues triées par fréquence, filtre celles qui ont déjà une PR ou un fix en cours, affiche le plan, puis traite chaque issue dans son propre worktree. À la fin, un résumé liste les PRs créées, les issues skippées et les échecs.
 
 ## Scripts Bash
 
