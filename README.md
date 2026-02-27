@@ -9,7 +9,7 @@ npx skills add https://github.com/vercel-labs/agent-browser --skill agent-browse
 npx skills add https://github.com/vercel-labs/agent-browser --skill dogfood
 ```
 
-Ajoutez les skills dans `$HOME/.claude/skills` et les agents dans `$HOME/.claude/agents`
+Ajoutez les skills dans `$HOME/.claude/skills`, les agents dans `$HOME/.claude/agents` et les scripts des agents dans `$HOME/.claude/scripts`
 
 ## Stack d'outils
 
