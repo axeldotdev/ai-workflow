@@ -149,7 +149,7 @@ Correcteur de bugs Sentry en worktree. Lit la stacktrace, identifie la cause rac
 
 **Modèle :** inherit | **Outils :** Read, Grep, Glob, Bash
 
-### `review`
+### `reviewer`
 
 Reviewer de PR GitHub. Fetch le code via ref (sans toucher à la branche), lit les fichiers modifiés en contexte, et poste une review formelle avec commentaires inline en français.
 
@@ -160,14 +160,6 @@ Reviewer de PR GitHub. Fetch le code via ref (sans toucher à la branche), lit l
 Exploration sémantique de codebase via `grepai`. Recherche par intention (`grepai search`), trace les graphes d'appels (`grepai trace`), et synthétise les résultats.
 
 **Modèle :** inherit | **Outils :** Read, Grep, Glob, Bash
-
-### `reviewer`
-
-> Agent global (`~/.claude/agents/`)
-
-Version complète du reviewer, utilisable en mode batch (toutes les PRs ouvertes) ou unitaire (une PR spécifique). Détecte automatiquement le mode selon l'input. Crée un worktree temporaire en read-only pour chaque PR.
-
-**Modèle :** sonnet | **Skills :** github-cli, linear-cli, sentry-cli
 
 ## Équipes d'agents
 
